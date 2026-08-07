@@ -23,6 +23,7 @@ import {
   sumFacts,
 } from "@/lib/queries";
 import { CURRENT_FY, PRIOR_FY } from "@/lib/fy";
+import { agiPerFeeEarner, ratioSuite } from "../lib/agency";
 
 const YTD = Array.from({ length: ACTUAL_MONTHS }, (_, i) => i + 1);
 
@@ -37,6 +38,8 @@ export default function OverviewPage() {
   const np = consolRows.find((r) => r.code === "NP")!;
   const alertList = alerts();
   const arB = ageBuckets(arItems(-1));
+  const ratios = ratioSuite(YTD);
+  const perFe = agiPerFeeEarner(YTD);
 
   return (
     <div className="space-y-4">
@@ -185,6 +188,36 @@ export default function OverviewPage() {
             <AlertRow key={i} severity={a.severity} title={a.title} detail={a.detail} />
           ))}
         </Card>
+      </div>
+
+      {/* Agency 三大比率（§6.2 擴充；staff/AGI 已見上方 Agency 指標卡，不重複） */}
+      <div className="space-y-2">
+        <h2 className="text-[13px] font-semibold text-ink">
+          Agency 三大比率{" "}
+          <span className="text-[11px] text-ink3 font-normal">Agency ratio suite · YTD（4–7 月）</span>
+        </h2>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <StatTile
+            label="Overheads ÷ AGI（不含員工成本）"
+            value={`${ratios.overheadToAgiPct.toFixed(1)}%`}
+            note={`健康區間 20–25%${
+              ratios.overheadToAgiPct >= 20 && ratios.overheadToAgiPct <= 25 ? "（區間內）" : "（區間外）"
+            }`}
+          />
+          <StatTile
+            label="EBITDA ÷ AGI"
+            value={`${ratios.ebitdaToAgiPct.toFixed(1)}%`}
+            note={`健康區間 15–20%${
+              ratios.ebitdaToAgiPct >= 15 && ratios.ebitdaToAgiPct <= 20 ? "（區間內）" : "（區間外）"
+            }`}
+          />
+          <StatTile
+            label="AGI per fee earner（年化）"
+            value={hkdCompact(perFe.annualised)}
+            note={`健康區間 HK$700K–1M／人 · fee earners ${perFe.feeEarners} 人`}
+          />
+        </div>
+        <p className="text-[11px] text-ink3">比率駁通 NetSuite 即有；fee earner 人數需人手輸入</p>
       </div>
 
       <p className="text-[11px] text-ink3">

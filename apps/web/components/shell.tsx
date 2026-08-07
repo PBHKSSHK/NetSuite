@@ -11,6 +11,9 @@ const NAV = [
   { href: "/budget", label: "預算", en: "Budgeting" },
   { href: "/cashflow", label: "現金流", en: "Cashflow" },
   { href: "/cost-center", label: "成本中心", en: "Cost Center" },
+  { href: "/clients", label: "客戶", en: "Clients" },
+  { href: "/operations", label: "營運", en: "Operations" },
+  { href: "/business-lines", label: "業務線", en: "Biz Lines" },
 ];
 
 export function Shell({ children }: { children: React.ReactNode }) {

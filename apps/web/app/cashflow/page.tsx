@@ -6,7 +6,8 @@
 import { useState } from "react";
 import { AgingChart, ForecastChart, WeeklyCashChart } from "@/components/charts";
 import { FilterBar } from "@/components/filter-bar";
-import { Card, ExportButton, Seg, exportCsv } from "@/components/ui";
+import { Card, ExportButton, Seg, StatTile, exportCsv } from "@/components/ui";
+import { arSplit, intercoBalances, supplierConcentration, taxSchedule } from "@/lib/agency";
 import { weeklyCashSeries, weeklyClientReport } from "@/lib/demo";
 import { useFilters } from "@/lib/filters";
 import { hkd, hkdCompact } from "@/lib/format";
@@ -19,6 +20,7 @@ import {
   dpo,
   dso,
   forecast13w,
+  type ForecastWeek,
 } from "@/lib/queries";
 import { subsidiaryById } from "@/lib/dims";
 
@@ -234,7 +236,113 @@ function ForecastTab({ lag, setLag }: { lag: number; setLag: (n: number) => void
           </table>
         </div>
       </Card>
+      <TaxScheduleCard weeks={weeks} />
     </div>
+  );
+}
+
+const WEEK_MS = 7 * 86_400_000;
+
+/** 稅務時間表 — 對照 13 週 forecast 窗口，標明每筆稅款落喺邊一週（或窗口外）。 */
+function TaxScheduleCard({ weeks }: { weeks: ForecastWeek[] }) {
+  const rows = taxSchedule();
+  const windowStart = weeks[0]?.weekStart ?? "";
+  const windowEndExcl = weeks.length ? new Date(new Date(weeks[weeks.length - 1].weekStart).getTime() + WEEK_MS) : null;
+  const lastCoveredDay = windowEndExcl ? new Date(windowEndExcl.getTime() - 86_400_000).toISOString().slice(0, 10) : "";
+
+  const weekOf = (dueDate: string): { idx: number; weekStart: string } | null => {
+    const t = new Date(dueDate).getTime();
+    for (let i = 0; i < weeks.length; i++) {
+      const s = new Date(weeks[i].weekStart).getTime();
+      if (t >= s && t < s + WEEK_MS) return { idx: i, weekStart: weeks[i].weekStart };
+    }
+    return null;
+  };
+
+  // 按到期日彙總，生成「邊幾週有稅款流出」提示
+  const byDue = new Map<string, number>();
+  for (const r of rows) byDue.set(r.dueDate, (byDue.get(r.dueDate) ?? 0) + r.amount);
+  const dueSummary = [...byDue.entries()].sort(([a], [b]) => (a < b ? -1 : 1));
+
+  return (
+    <Card
+      title="稅務時間表 Tax Schedule"
+      subtitle={`利得稅（最終稅 + 暫繳）現金流出 · 對照 13 週窗口 ${windowStart} 至 ${lastCoveredDay}`}
+      right={
+        <ExportButton
+          onClick={() =>
+            exportCsv(
+              "tax_schedule.csv",
+              ["公司", "期別", "到期日", "金額", "13週窗口"],
+              rows.map((r) => {
+                const w = weekOf(r.dueDate);
+                return [
+                  subsidiaryById(r.subsidiaryId)?.short ?? String(r.subsidiaryId),
+                  r.label,
+                  r.dueDate,
+                  r.amount,
+                  w ? `第 ${w.idx + 1} 週` : "窗口外",
+                ];
+              })
+            )
+          }
+        />
+      }
+    >
+      <div className="overflow-x-auto">
+        <table className="report-table w-full text-[12px]">
+          <thead>
+            <tr>
+              <th className="text-left">公司</th>
+              <th className="text-left">期別</th>
+              <th className="text-left">到期日</th>
+              <th className="num">金額</th>
+              <th className="text-left">13 週窗口</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r, i) => {
+              const w = weekOf(r.dueDate);
+              return (
+                <tr key={`${r.subsidiaryId}-${i}`}>
+                  <td className="text-left">{subsidiaryById(r.subsidiaryId)?.short}</td>
+                  <td className="text-left text-ink2">{r.label}</td>
+                  <td className="text-left text-ink2">{r.dueDate}</td>
+                  <td className="num">{hkd(r.amount)}</td>
+                  <td className="text-left">
+                    {w ? (
+                      <span className="text-critical">第 {w.idx + 1} 週（週始 {w.weekStart}）</span>
+                    ) : (
+                      <span className="text-ink3">窗口外</span>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+            <tr className="subtotal">
+              <td className="text-left">合計</td>
+              <td className="text-left" />
+              <td className="text-left" />
+              <td className="num">{hkd(rows.reduce((a, r) => a + r.amount, 0))}</td>
+              <td className="text-left" />
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div className="mt-2 space-y-0.5">
+        {dueSummary.map(([due, amt]) => {
+          const w = weekOf(due);
+          return (
+            <p key={due} className={`text-[12px] ${w ? "text-critical" : "text-ink2"}`}>
+              {w
+                ? `⚠ ${due} 到期稅款合共 ${hkdCompact(amt)}，落喺 forecast 第 ${w.idx + 1} 週（週始 ${w.weekStart}）— 上表淨額未含，請預留。`
+                : `${due} 到期稅款合共 ${hkdCompact(amt)} — 喺 13 週窗口外（窗口至 ${lastCoveredDay}），滾動更新時將進入 forecast。`}
+            </p>
+          );
+        })}
+      </div>
+      <p className="text-[11px] text-ink3 mt-2">真數來源：稅表需人手輸入（會計提供評稅單）。</p>
+    </Card>
   );
 }
 
@@ -250,15 +358,134 @@ function AgingTab({ subsidiary }: { subsidiary: number }) {
     { label: "61–90", value: b.d61_90 },
     { label: "90+", value: b.d90p },
   ];
+  const split = arSplit(subsidiary);
+  const splitTotal = split.external + split.interco;
+  const splitPct = (n: number) => (splitTotal ? `${((100 * n) / splitTotal).toFixed(1)}%` : "—");
+  const interco = intercoBalances();
+  const suppliers = supplierConcentration();
+  const topVendor = suppliers[0];
   return (
-    <div className="grid lg:grid-cols-2 gap-4">
-      <Card title={`A/R aging — 總額 ${hkdCompact(arB.total)}`} subtitle={`DSO ${dso(subsidiary)} 日 · 逾期>60日且>HK$50K 觸發警示（§7）`}>
-        <AgingChart data={bucketData(arB)} />
-        <ItemTable items={ar} kind="ar" />
+    <div className="space-y-4">
+      {/* A/R 拆分：外部客 vs 集團內 interco */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <StatTile
+          label="外部客 A/R（External）"
+          value={hkdCompact(split.external)}
+          note={`佔總應收 ${splitPct(split.external)} · DSO 應以此數計`}
+        />
+        <StatTile
+          label="集團內 Interco A/R（Intercompany）"
+          value={hkdCompact(split.interco)}
+          note={`佔總應收 ${splitPct(split.interco)} · 合併層面對銷，不應計入 DSO`}
+        />
+      </div>
+
+      <Card
+        title="Interco 結欠明細 Intercompany Balances"
+        subtitle="集團內邊間欠邊間 · 最耐賬齡 >90 日標紅（不受公司篩選影響）"
+        right={
+          <ExportButton
+            onClick={() =>
+              exportCsv(
+                "interco_balances.csv",
+                ["持有應收", "欠款公司", "金額", "最耐賬齡（日）"],
+                interco.map((b) => [b.from, b.to, b.amount, b.oldestDays])
+              )
+            }
+          />
+        }
+      >
+        <div className="overflow-x-auto">
+          <table className="report-table w-full text-[12px]">
+            <thead>
+              <tr>
+                <th className="text-left">持有應收</th>
+                <th className="text-left">欠款公司</th>
+                <th className="num">金額</th>
+                <th className="num">最耐賬齡（日）</th>
+              </tr>
+            </thead>
+            <tbody>
+              {interco.map((b, i) => (
+                <tr key={i}>
+                  <td className="text-left">{b.from}</td>
+                  <td className="text-left text-ink2">{b.to}</td>
+                  <td className="num">{hkd(b.amount)}</td>
+                  <td className={`num ${b.oldestDays > 90 ? "text-critical font-medium" : ""}`}>
+                    {b.oldestDays}
+                    {b.oldestDays > 90 && " ⚠"}
+                  </td>
+                </tr>
+              ))}
+              <tr className="subtotal">
+                <td className="text-left">合計</td>
+                <td className="text-left" />
+                <td className="num">{hkd(interco.reduce((a, b) => a + b.amount, 0))}</td>
+                <td className="num" />
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p className="text-[12px] text-ink2 mt-2">
+          DSO 應以外部客 A/R 計算 — interco 結欠喺合併層面對銷，混入會令收款表現失真；賬齡超過 90 日嘅結欠建議安排清繳或對數。
+        </p>
+        <p className="text-[11px] text-ink3 mt-1">真數來源：駁通 NetSuite 即有（GL/AR/AP）。</p>
       </Card>
-      <Card title={`A/P aging — 總額 ${hkdCompact(apB.total)}`} subtitle={`DPO ${dpo(subsidiary)} 日`}>
-        <AgingChart data={bucketData(apB)} />
-        <ItemTable items={ap} kind="ap" />
+
+      <div className="grid lg:grid-cols-2 gap-4">
+        <Card title={`A/R aging — 總額 ${hkdCompact(arB.total)}`} subtitle={`DSO ${dso(subsidiary)} 日 · 逾期>60日且>HK$50K 觸發警示（§7）`}>
+          <AgingChart data={bucketData(arB)} />
+          <ItemTable items={ar} kind="ar" />
+        </Card>
+        <Card title={`A/P aging — 總額 ${hkdCompact(apB.total)}`} subtitle={`DPO ${dpo(subsidiary)} 日`}>
+          <AgingChart data={bucketData(apB)} />
+          <ItemTable items={ap} kind="ap" />
+        </Card>
+      </div>
+
+      <Card
+        title="供應商集中度 Supplier Concentration"
+        subtitle="YTD 供應商支出佔 COS 比例 · 賬期（集團合計）"
+        right={
+          <ExportButton
+            onClick={() =>
+              exportCsv(
+                "supplier_concentration.csv",
+                ["供應商", "YTD 支出", "佔 COS %", "賬期（日）"],
+                suppliers.map((v) => [v.vendor, v.ytdSpend, v.pctOfCos, v.termsDays])
+              )
+            }
+          />
+        }
+      >
+        <div className="overflow-x-auto">
+          <table className="report-table w-full text-[12px]">
+            <thead>
+              <tr>
+                <th className="text-left">供應商</th>
+                <th className="num">YTD 支出</th>
+                <th className="num">佔 COS %</th>
+                <th className="num">賬期（日）</th>
+              </tr>
+            </thead>
+            <tbody>
+              {suppliers.map((v) => (
+                <tr key={v.vendor}>
+                  <td className="text-left">{v.vendor}</td>
+                  <td className="num">{hkd(v.ytdSpend)}</td>
+                  <td className={`num ${v.pctOfCos > 30 ? "text-critical font-medium" : ""}`}>{v.pctOfCos}%</td>
+                  <td className="num text-ink2">{v.termsDays}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        {topVendor && topVendor.pctOfCos > 30 && (
+          <p className="text-[12px] text-critical mt-2">
+            ⚠ 首名供應商 {topVendor.vendor} 佔 YTD COS {topVendor.pctOfCos}% — 媒體平台集中度高，客戶收款前需先墊付媒體費，影響墊資風險；建議檢視賬期同客戶預付安排。
+          </p>
+        )}
+        <p className="text-[11px] text-ink3 mt-2">真數來源：駁通 NetSuite 即有（A/P）。</p>
       </Card>
     </div>
   );

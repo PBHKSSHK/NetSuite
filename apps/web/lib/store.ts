@@ -41,6 +41,32 @@ export const BANK_ACCOUNTS: {
   balance: number;
 }[] = [];
 
+/** 客戶主檔（dim_client_info — 系統估算 seed；confirmed=false 即未經人手確認） */
+export const CLIENT_INFO: {
+  customerId: number;
+  name: string;
+  isRelated: boolean;
+  isRetainer: boolean;
+  retainerMonthly: number | null;
+  sector: string | null;
+  creditLimit: number | null;
+  /** 首次開票月份 YYYY-MM（null = 未知） */
+  firstYm: string | null;
+  confirmed: boolean;
+}[] = [];
+
+/** 客戶逐月收入（fact_client_revenue — invoice − credit memo 淨額，HKD） */
+export const CLIENT_REVENUE: {
+  customerId: number;
+  subsidiaryId: number;
+  /** YYYY-MM */
+  ym: string;
+  amount: number;
+}[] = [];
+
+/** 未收 A/R 按客戶合計（由 fact_ar_open 嘅 customer_id 砌，唔使多一次 fetch） */
+export const AR_BY_CUSTOMER = new Map<number, number>();
+
 // ── Supabase row shapes ──────────────────────────────────────────────────────
 
 interface PeriodRow {
@@ -115,6 +141,25 @@ interface CollectionRow {
 interface NamedDimRow {
   id: number;
   name: string;
+}
+
+interface ClientInfoRow {
+  customer_id: number;
+  name: string;
+  is_related: boolean;
+  is_retainer: boolean;
+  retainer_monthly: number | string | null;
+  sector: string | null;
+  credit_limit: number | string | null;
+  first_ym: string | null;
+  confirmed: boolean;
+}
+
+interface ClientRevenueRow {
+  customer_id: number;
+  subsidiary_id: number;
+  ym: string;
+  amount: number | string;
 }
 
 // ── fetch helpers ────────────────────────────────────────────────────────────
@@ -200,6 +245,8 @@ async function doHydrate(): Promise<void> {
     customers,
     subsidiaries,
     collectionRows,
+    clientInfoRows,
+    clientRevenueRows,
   ] = await Promise.all([
     fetchAll<PeriodRow>("dim_period", "id, fy_label, fy_month_no, start_date", ["id"]),
     fetchAll<ReportGroupRow>("report_group", "id, code, label, statement", ["id"]),
@@ -230,6 +277,16 @@ async function doHydrate(): Promise<void> {
       "fact_collections",
       "payment_id, payment_date, subsidiary_id, customer_name, invoice_tranid, invoice_memo, amount_applied",
       ["payment_date", "payment_id"]
+    ),
+    fetchAll<ClientInfoRow>(
+      "dim_client_info",
+      "customer_id, name, is_related, is_retainer, retainer_monthly, sector, credit_limit, first_ym, confirmed",
+      ["customer_id"]
+    ),
+    fetchAll<ClientRevenueRow>(
+      "fact_client_revenue",
+      "customer_id, subsidiary_id, ym, amount",
+      ["customer_id", "subsidiary_id", "ym"]
     ),
   ]);
 
@@ -335,6 +392,30 @@ async function doHydrate(): Promise<void> {
     amount: num(r.amount_applied),
   }));
 
+  // ── 客戶主檔 + 客戶逐月收入 + 按客戶 AR 合計（clients 頁真數層）
+  const clientInfo = clientInfoRows.map((r) => ({
+    customerId: r.customer_id,
+    name: r.name,
+    isRelated: r.is_related,
+    isRetainer: r.is_retainer,
+    retainerMonthly: r.retainer_monthly == null ? null : num(r.retainer_monthly),
+    sector: r.sector,
+    creditLimit: r.credit_limit == null ? null : num(r.credit_limit),
+    firstYm: r.first_ym,
+    confirmed: r.confirmed,
+  }));
+  const clientRevenue = clientRevenueRows.map((r) => ({
+    customerId: r.customer_id,
+    subsidiaryId: r.subsidiary_id,
+    ym: r.ym,
+    amount: num(r.amount),
+  }));
+  const arByCustomer = new Map<number, number>();
+  for (const r of arRows) {
+    if (r.customer_id == null) continue;
+    arByCustomer.set(r.customer_id, (arByCustomer.get(r.customer_id) ?? 0) + num(r.amount_open));
+  }
+
   // ── 30 日 series：而家只有一個 snapshot，先生成一條平線（30 日全用今日值）。
   //    日後每日 sync 會累積真數，到時改為直接讀每日 rows 砌真曲線。
   const points: BankPoint[] = [];
@@ -369,6 +450,15 @@ async function doHydrate(): Promise<void> {
 
   COLLECTIONS.length = 0;
   for (const c of collections) COLLECTIONS.push(c);
+
+  CLIENT_INFO.length = 0;
+  for (const c of clientInfo) CLIENT_INFO.push(c);
+
+  CLIENT_REVENUE.length = 0;
+  for (const r of clientRevenue) CLIENT_REVENUE.push(r);
+
+  AR_BY_CUSTOMER.clear();
+  for (const [k, v] of arByCustomer) AR_BY_CUSTOMER.set(k, v);
 
   DATA_AS_OF.value = latestAsOf ? `${latestAsOf} sync` : "未有 sync 紀錄";
 }

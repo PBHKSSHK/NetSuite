@@ -94,6 +94,8 @@ const PAGE_SIZE = 1000;
 
 /** 讀晒成張表——supabase-js 預設每次最多 1000 行（fact_gl 有 8,792 行），
  *  所以要用 .range() loop 分頁攞晒。orderCols 保證分頁順序穩定。 */
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
 async function fetchAll<T>(
   table: string,
   columns: string,
@@ -101,13 +103,25 @@ async function fetchAll<T>(
 ): Promise<T[]> {
   const out: T[] = [];
   for (let from = 0; ; from += PAGE_SIZE) {
-    let q = supabase.from(table).select(columns);
-    for (const col of orderCols) q = q.order(col, { ascending: true });
-    const { data, error } = await q.range(from, from + PAGE_SIZE - 1);
-    if (error) {
-      throw new Error(`讀取 ${table} 失敗：${error.message}`);
+    let rows: T[] = [];
+    // retry：新 project cold start 曾出現服務間時鐘漂移（"JWT issued at future"）；
+    // JWT 類錯誤先 refresh session 攞新 token 再試，最多 3 次。
+    for (let attempt = 1; ; attempt++) {
+      let q = supabase.from(table).select(columns);
+      for (const col of orderCols) q = q.order(col, { ascending: true });
+      const { data, error } = await q.range(from, from + PAGE_SIZE - 1);
+      if (!error) {
+        rows = (data ?? []) as unknown as T[];
+        break;
+      }
+      if (attempt >= 3) {
+        throw new Error(`讀取 ${table} 失敗：${error.message}`);
+      }
+      await sleep(1500 * attempt);
+      if (/jwt|token|issued|expired/i.test(error.message)) {
+        await supabase.auth.refreshSession().catch(() => {});
+      }
     }
-    const rows = (data ?? []) as unknown as T[];
     out.push(...rows);
     if (rows.length < PAGE_SIZE) break;
   }

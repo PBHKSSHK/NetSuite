@@ -69,7 +69,13 @@ export function DataBoot({ children }: { children: React.ReactNode }) {
         <div className="max-w-md rounded-lg border border-ringc bg-surface p-5 text-center">
           <div className="text-sm font-semibold text-ink">同步失敗</div>
           <div className="mt-2 break-words text-[12px] leading-relaxed text-ink2">{errMsg}</div>
-          <div className="mt-2 text-[11px] text-ink3">請重新整理頁面再試；持續失敗請聯絡管理員。</div>
+          <button
+            onClick={() => window.location.reload()}
+            className="mt-3 rounded-md bg-accent px-4 py-1.5 text-[13px] font-medium text-white hover:opacity-90"
+          >
+            重試
+          </button>
+          <div className="mt-2 text-[11px] text-ink3">持續失敗請聯絡管理員。</div>
         </div>
       </div>
     );

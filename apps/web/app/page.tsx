@@ -5,7 +5,7 @@
 import Link from "next/link";
 import { BankTrendChart, MonthTrendChart } from "@/components/charts";
 import { AlertRow, Card, StatTile } from "@/components/ui";
-import { BANK_TODAY } from "@/lib/demo";
+import { BANK_TODAY } from "@/lib/store";
 import { OPERATING_SUBS } from "@/lib/dims";
 import { hkdCompact, pct, variancePct } from "@/lib/format";
 import { ACTUAL_MONTHS, fyMonthLabel } from "@/lib/fy";

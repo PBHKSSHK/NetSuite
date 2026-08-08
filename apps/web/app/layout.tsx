@@ -3,6 +3,7 @@ import "./globals.css";
 import { FilterProvider } from "@/lib/filters";
 import { PaletteProvider } from "@/lib/theme";
 import { Shell } from "@/components/shell";
+import { DataBoot } from "@/components/data-boot";
 
 export const metadata: Metadata = {
   title: "集團管理 Dashboard",
@@ -16,7 +17,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <body className="antialiased">
         <PaletteProvider>
           <FilterProvider>
-            <Shell>{children}</Shell>
+            <Shell>
+              <DataBoot>{children}</DataBoot>
+            </Shell>
           </FilterProvider>
         </PaletteProvider>
       </body>

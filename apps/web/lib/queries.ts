@@ -2,15 +2,14 @@
 // same signatures are re-implemented against Supabase (fact_gl × report_group);
 // pages stay untouched.
 
+// 真數（Supabase hydration store — 引用不變，hydrate() 完成後 in-place 填數）
+import { AP_OPEN, AR_OPEN, BANK_POINTS, BANK_TODAY, PL_FACTS } from "./store";
+// 未有真數源嘅照舊由 demo 入（dept 分攤 / headcount / 客戶集中度 / recurring
+// / tagging 係 Phase 2 真數）
 import {
-  AP_OPEN,
-  AR_OPEN,
-  BANK_POINTS,
-  BANK_TODAY,
   CLIENT_REVENUE_SHARE,
   DEPT_WEIGHTS,
   GROUP_HEADCOUNT,
-  PL_FACTS,
   RECURRING,
   taggingTrend,
   untaggedShare,

@@ -1,14 +1,14 @@
 "use client";
 
-// Cashflow（§5.4）— 三個 tab：月度實際現金流、Weekly Customer Revenue &
-// Cash Flow、13-week rolling forecast；另附 A/R・A/P aging（§6.3）。
+// Cashflow（§5.4）— 四個 tab：月度實際現金流、收數週報 Weekly Collections
+// （真數，復刻會計每週 WhatsApp 報告）、13-week rolling forecast；
+// 另附 A/R・A/P aging（§6.3）。
 
-import { useState } from "react";
-import { AgingChart, ForecastChart, WeeklyCashChart } from "@/components/charts";
+import { Fragment, useState } from "react";
+import { AgingChart, ForecastChart } from "@/components/charts";
 import { FilterBar } from "@/components/filter-bar";
 import { Card, ExportButton, Seg, StatTile, exportCsv } from "@/components/ui";
 import { arSplit, intercoBalances, supplierConcentration, taxSchedule } from "@/lib/agency";
-import { weeklyCashSeries, weeklyClientReport } from "@/lib/demo";
 import { useFilters } from "@/lib/filters";
 import { hkd, hkdCompact } from "@/lib/format";
 import { fyMonthFull } from "@/lib/fy";
@@ -22,7 +22,8 @@ import {
   forecast13w,
   type ForecastWeek,
 } from "@/lib/queries";
-import { subsidiaryById } from "@/lib/dims";
+import { SUBSIDIARIES, subsidiaryById } from "@/lib/dims";
+import { BANK_ACCOUNTS, COLLECTIONS } from "@/lib/store";
 
 type Tab = "monthly" | "weekly" | "forecast" | "aging";
 
@@ -39,7 +40,7 @@ export default function CashflowPage() {
       <Seg
         options={[
           { value: "monthly", label: "月度實際" },
-          { value: "weekly", label: "每週報表" },
+          { value: "weekly", label: "收數週報" },
           { value: "forecast", label: "13 週預測" },
           { value: "aging", label: "A/R・A/P Aging" },
         ]}
@@ -110,61 +111,287 @@ function MonthlyTab({ subLabel, subsidiary }: { subLabel: string; subsidiary: nu
   );
 }
 
+// ── 收數週報 Weekly Collections（真數：fact_collections + 逐個戶口結餘）──────
+
+const DAY_MS = 86_400_000;
+
+/** 該日期所屬週嘅星期一（星期一為一週開始）。 */
+function mondayOf(dateStr: string): string {
+  const t = Date.parse(`${dateStr}T00:00:00Z`);
+  const shift = (new Date(t).getUTCDay() + 6) % 7;
+  return new Date(t - shift * DAY_MS).toISOString().slice(0, 10);
+}
+
+/** 本地時區今日（避免 toISOString 跨時區差一日）。 */
+function localTodayIso(): string {
+  const n = new Date();
+  return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, "0")}-${String(n.getDate()).padStart(2, "0")}`;
+}
+
+const mdLabel = (iso: string) => `${Number(iso.slice(5, 7))}/${Number(iso.slice(8, 10))}`;
+
+function weekLabel(weekStart: string): string {
+  const end = new Date(Date.parse(`${weekStart}T00:00:00Z`) + 6 * DAY_MS).toISOString().slice(0, 10);
+  return `${mdLabel(weekStart)}–${mdLabel(end)}`;
+}
+
+const money2 = (n: number) =>
+  `$${n.toLocaleString("en-HK", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+type CollectionItem = (typeof COLLECTIONS)[number];
+type BankAccount = (typeof BANK_ACCOUNTS)[number];
+
+const SMALL_BALANCE = 1000; // 結餘接近零嘅戶口摺入「其他細額戶口」
+const COPY_MIN_BALANCE = 10_000; // 複製文本只列主要戶口（同會計版本一致）
+
+interface BankGroup {
+  subsidiaryId: number;
+  label: string;
+  main: BankAccount[];
+  smallCount: number;
+  smallSum: number;
+  subtotal: number;
+}
+
+function bankGroups(): BankGroup[] {
+  const bySub = new Map<number, BankAccount[]>();
+  for (const a of BANK_ACCOUNTS) {
+    const list = bySub.get(a.subsidiaryId);
+    if (list) list.push(a);
+    else bySub.set(a.subsidiaryId, [a]);
+  }
+  const order = [
+    ...SUBSIDIARIES.map((s) => s.id).filter((id) => bySub.has(id)),
+    ...[...bySub.keys()].filter((id) => !SUBSIDIARIES.some((s) => s.id === id)).sort((a, b) => a - b),
+  ];
+  return order.map((id) => {
+    const accounts = [...(bySub.get(id) ?? [])].sort((a, b) => b.balance - a.balance);
+    const main = accounts.filter((a) => a.balance >= SMALL_BALANCE);
+    const small = accounts.filter((a) => a.balance < SMALL_BALANCE);
+    return {
+      subsidiaryId: id,
+      label: subsidiaryById(id)?.short ?? `公司 #${id}`,
+      main,
+      smallCount: small.length,
+      smallSum: small.reduce((s, a) => s + a.balance, 0),
+      subtotal: accounts.reduce((s, a) => s + a.balance, 0),
+    };
+  });
+}
+
+/** 產生會計 WhatsApp 週報文本（invoice 逐行 + 主要戶口結餘）。 */
+function buildWeeklyReportText(
+  rows: CollectionItem[],
+  weekTotal: number,
+  groups: BankGroup[],
+  grandTotal: number
+): string {
+  const lines: string[] = ["4位老闆, 今個星期收到既錢:"];
+  for (const r of rows) {
+    const desc = r.invoiceMemo ?? r.customerName ?? "";
+    lines.push(`${r.invoiceTranid}  ${desc}  ${money2(r.amount)}`.trim());
+  }
+  lines.push(`Total: HK$${hkd(weekTotal)}`);
+  lines.push("Bank balance:");
+  for (const g of groups) {
+    for (const a of g.main) {
+      if (a.balance >= COPY_MIN_BALANCE) lines.push(`${a.name}  $${hkd(a.balance)}`);
+    }
+  }
+  lines.push(`Total: HK$${hkd(grandTotal)}`);
+  return lines.join("\n");
+}
+
 function WeeklyTab() {
-  const report = weeklyClientReport();
-  const series = weeklyCashSeries().map((w) => ({ label: w.week, cashIn: w.cashIn, cashOut: w.cashOut }));
-  const totals = report.rows.reduce(
-    (a, r) => ({ billed: a.billed + r.billed, collected: a.collected + r.collected, ar: a.ar + r.endingAr }),
-    { billed: 0, collected: 0, ar: 0 }
-  );
+  const thisMonday = mondayOf(localTodayIso());
+  const weekStarts: string[] = [];
+  for (let i = 7; i >= 0; i--) {
+    weekStarts.push(new Date(Date.parse(`${thisMonday}T00:00:00Z`) - i * WEEK_MS).toISOString().slice(0, 10));
+  }
+  const [week, setWeek] = useState(thisMonday);
+  const [copied, setCopied] = useState(false);
+
+  // 近 8 週每週收款合計（睇收數節奏）
+  const totalByWeek = new Map<string, number>(weekStarts.map((w) => [w, 0]));
+  for (const c of COLLECTIONS) {
+    const w = mondayOf(c.paymentDate);
+    if (totalByWeek.has(w)) totalByWeek.set(w, (totalByWeek.get(w) ?? 0) + c.amount);
+  }
+  const maxWeekTotal = Math.max(1, ...totalByWeek.values());
+
+  const rows = COLLECTIONS.filter((c) => mondayOf(c.paymentDate) === week);
+  const weekTotal = rows.reduce((s, r) => s + r.amount, 0);
+
+  const groups = bankGroups();
+  const grandTotal = groups.reduce((s, g) => s + g.subtotal, 0);
+
+  const copyReport = () => {
+    navigator.clipboard.writeText(buildWeeklyReportText(rows, weekTotal, groups, grandTotal)).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  };
+
   return (
     <div className="space-y-4">
-      <Card title="本週現金收支（近 8 週）" subtitle="每週一自動生成並存檔（配合 7 年保留政策）">
-        <WeeklyCashChart data={series} />
-      </Card>
+      <p className="text-[11px] text-ink3">來源：NetSuite 收款紀錄（每日 sync）· 同會計人手週報同源</p>
+
       <Card
-        title={`Weekly Customer Revenue & Cash Flow — 週始 ${report.weekOf}`}
-        subtitle="取代現有人手報表：本週各客戶開票、收款、期末應收"
+        title={`收數週報 Weekly Collections — 週始 ${week}`}
+        subtitle="揀選週期內實際收到嘅客戶款項，逐張 invoice 列明"
         right={
-          <ExportButton
-            onClick={() =>
-              exportCsv(
-                `weekly_${report.weekOf}.csv`,
-                ["客戶", "本週開票", "本週收款", "期末應收"],
-                report.rows.map((r) => [r.client, r.billed, r.collected, r.endingAr])
-              )
-            }
-          />
+          <div className="flex items-center gap-2 shrink-0">
+            <select
+              value={week}
+              onChange={(e) => setWeek(e.target.value)}
+              className="bg-surface border border-ringc rounded-lg px-2.5 py-1 text-[12px]"
+              aria-label="選擇週期"
+            >
+              {[...weekStarts].reverse().map((w) => (
+                <option key={w} value={w}>
+                  {weekLabel(w)}
+                  {w === thisMonday ? "（本週）" : ""}
+                </option>
+              ))}
+            </select>
+            <button
+              onClick={copyReport}
+              className={`text-[12px] rounded-md px-2.5 py-1 border transition-colors ${
+                copied
+                  ? "border-ringc text-deltagood bg-surface"
+                  : "bg-accent text-white border-transparent hover:opacity-90"
+              }`}
+            >
+              {copied ? "已複製 ✓" : "複製週報"}
+            </button>
+          </div>
         }
       >
         <div className="overflow-x-auto">
           <table className="report-table w-full text-[13px]">
             <thead>
               <tr>
-                <th className="text-left">客戶</th>
-                <th className="num">本週開票</th>
-                <th className="num">本週收款</th>
-                <th className="num">期末應收</th>
+                <th className="text-left">Invoice#</th>
+                <th className="text-left">描述</th>
+                <th className="text-left">公司</th>
+                <th className="text-left">日期</th>
+                <th className="num">金額</th>
               </tr>
             </thead>
             <tbody>
-              {report.rows.map((r) => (
-                <tr key={r.client}>
-                  <td className="text-left">{r.client}</td>
-                  <td className="num">{hkd(r.billed)}</td>
-                  <td className="num">{hkd(r.collected)}</td>
-                  <td className="num">{hkd(r.endingAr)}</td>
+              {rows.map((r, i) => (
+                <tr key={`${r.invoiceTranid}-${i}`}>
+                  <td className="text-left whitespace-nowrap">{r.invoiceTranid || "—"}</td>
+                  <td className="text-left text-ink2">{r.invoiceMemo ?? r.customerName ?? "—"}</td>
+                  <td className="text-left text-ink2 whitespace-nowrap">
+                    {subsidiaryById(r.subsidiaryId)?.short ?? `#${r.subsidiaryId}`}
+                  </td>
+                  <td className="text-left text-ink2 whitespace-nowrap">{r.paymentDate}</td>
+                  <td className="num">{hkd(r.amount)}</td>
                 </tr>
               ))}
+              {rows.length === 0 && (
+                <tr>
+                  <td className="text-left text-ink3" colSpan={5}>
+                    呢個星期暫時未有收款紀錄。
+                  </td>
+                </tr>
+              )}
               <tr className="subtotal">
-                <td className="text-left">合計</td>
-                <td className="num">{hkd(totals.billed)}</td>
-                <td className="num">{hkd(totals.collected)}</td>
-                <td className="num">{hkd(totals.ar)}</td>
+                <td className="text-left">Total</td>
+                <td />
+                <td />
+                <td />
+                <td className="num">{hkd(weekTotal)}</td>
               </tr>
             </tbody>
           </table>
         </div>
+      </Card>
+
+      <Card title="收數節奏（近 8 週）" subtitle="每週收款合計 · 撳一行切換週期">
+        <div className="space-y-1">
+          {weekStarts.map((w) => {
+            const total = totalByWeek.get(w) ?? 0;
+            const selected = w === week;
+            return (
+              <button
+                key={w}
+                onClick={() => setWeek(w)}
+                className={`w-full flex items-center gap-2.5 rounded-md px-1.5 py-1 text-left hover:bg-ink3/10 ${
+                  selected ? "bg-ink3/10" : ""
+                }`}
+              >
+                <span className={`w-24 shrink-0 text-[11px] num ${selected ? "font-medium" : "text-ink2"}`}>
+                  {weekLabel(w)}
+                  {w === thisMonday ? " 本週" : ""}
+                </span>
+                <span className="flex-1 h-3.5 rounded-sm overflow-hidden">
+                  <span
+                    className="block h-full rounded-sm bg-accent"
+                    style={{
+                      width: `${total > 0 ? Math.max(2, (100 * total) / maxWeekTotal) : 0}%`,
+                      opacity: selected ? 1 : 0.45,
+                    }}
+                  />
+                </span>
+                <span className={`w-24 shrink-0 text-right text-[12px] num ${selected ? "font-medium" : "text-ink2"}`}>
+                  {hkdCompact(total)}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </Card>
+
+      <Card
+        title={`銀行結餘 Bank Balance — 集團合計 ${hkdCompact(grandTotal)}`}
+        subtitle={`最新 sync snapshot · 按公司分組；結餘少於 $${SMALL_BALANCE.toLocaleString()} 嘅戶口摺入「其他細額戶口」`}
+      >
+        <div className="overflow-x-auto">
+          <table className="report-table w-full text-[13px]">
+            <thead>
+              <tr>
+                <th className="text-left">公司／戶口</th>
+                <th className="num">結餘</th>
+              </tr>
+            </thead>
+            <tbody>
+              {groups.map((g) => (
+                <Fragment key={g.subsidiaryId}>
+                  <tr>
+                    <td className="text-left font-medium" colSpan={2}>
+                      {g.label}
+                    </td>
+                  </tr>
+                  {g.main.map((a) => (
+                    <tr key={a.accountId}>
+                      <td className="text-left text-ink2 pl-5">{a.name}</td>
+                      <td className="num">{hkd(a.balance)}</td>
+                    </tr>
+                  ))}
+                  {g.smallCount > 0 && (
+                    <tr>
+                      <td className="text-left text-ink3 pl-5">其他細額戶口（{g.smallCount} 個）</td>
+                      <td className="num text-ink3">{hkd(g.smallSum)}</td>
+                    </tr>
+                  )}
+                  <tr className="subtotal">
+                    <td className="text-left">{g.label} 小計</td>
+                    <td className="num">{hkd(g.subtotal)}</td>
+                  </tr>
+                </Fragment>
+              ))}
+              <tr className="subtotal">
+                <td className="text-left font-semibold">集團 Total</td>
+                <td className="num font-semibold">{hkd(grandTotal)}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p className="text-[11px] text-ink3 mt-2">
+          「複製週報」文本只列結餘 ≥ ${COPY_MIN_BALANCE.toLocaleString()} 嘅主要戶口（同會計版本一致）；Total 為全部戶口合計。
+        </p>
       </Card>
     </div>
   );

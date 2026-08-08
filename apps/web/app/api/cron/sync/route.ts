@@ -137,6 +137,26 @@ export async function GET(req: Request) {
       );
     }
 
+    // collections: payment → applied invoices (last 60 days, upsert)
+    const colSince = new Date(Date.now() - 60 * 86400000).toISOString().slice(0, 10);
+    const cols = await sqAll(
+      token,
+      `SELECT p.id AS payid, TO_CHAR(p.trandate,'MM/DD/YYYY') AS pdate, ntll.previousdoc AS invid, inv.tranid AS invnum, inv.memo AS invmemo, ntll.foreignamount AS applied, NVL(p.exchangerate, 1) AS fx, tl.subsidiary AS sub, COALESCE(c.companyname, c.entityid) AS cust FROM transaction p JOIN nexttransactionlinelink ntll ON ntll.nextdoc = p.id AND ntll.linktype = 'Payment' JOIN transaction inv ON inv.id = ntll.previousdoc AND inv.type IN ('CustInvc') JOIN transactionline tl ON tl.transaction = p.id AND tl.mainline = 'T' LEFT JOIN customer c ON c.id = p.entity WHERE p.type = 'CustPymt' AND p.trandate >= TO_DATE('${colSince}','YYYY-MM-DD') AND NVL(ntll.foreignamount, 0) <> 0`
+    );
+    await ingest(
+      "fact_collections",
+      cols.map((r) => ({
+        payment_id: Number(r.payid),
+        invoice_txn_id: Number(r.invid),
+        payment_date: mdy(r.pdate),
+        subsidiary_id: Number(r.sub),
+        customer_name: r.cust ?? null,
+        invoice_tranid: r.invnum,
+        invoice_memo: r.invmemo ?? null,
+        amount_applied: Math.round(Number(r.applied) * Number(r.fx) * 100) / 100,
+      }))
+    );
+
     const bank = await sqAll(
       token,
       `SELECT tl.subsidiary AS sub, tal.account AS acct, SUM(NVL(tal.debit,0) - NVL(tal.credit,0)) AS bal FROM transactionaccountingline tal JOIN transaction t ON t.id = tal.transaction JOIN transactionline tl ON tl.transaction = tal.transaction AND tl.id = tal.transactionline JOIN account a ON a.id = tal.account WHERE tal.posting = 'T' AND a.accttype = 'Bank' GROUP BY tl.subsidiary, tal.account`

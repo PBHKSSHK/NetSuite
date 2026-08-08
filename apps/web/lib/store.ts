@@ -23,6 +23,24 @@ export const BANK_TODAY: Record<number, number> = {};
 export const BANK_POINTS: BankPoint[] = [];
 export const DATA_AS_OF: { value: string } = { value: "" };
 
+/** 收款明細（fact_collections — NetSuite 收款紀錄，payment_date 升序） */
+export const COLLECTIONS: {
+  paymentDate: string;
+  subsidiaryId: number;
+  customerName: string | null;
+  invoiceTranid: string;
+  invoiceMemo: string | null;
+  amount: number;
+}[] = [];
+
+/** 最新 snapshot 逐個銀行戶口結餘（fact_bank_balance_daily × dim_account） */
+export const BANK_ACCOUNTS: {
+  subsidiaryId: number;
+  accountId: number;
+  name: string;
+  balance: number;
+}[] = [];
+
 // ── Supabase row shapes ──────────────────────────────────────────────────────
 
 interface PeriodRow {
@@ -43,6 +61,7 @@ interface AccountRow {
   id: number;
   report_group_id: number | null;
   accttype: string | null;
+  fullname: string | null;
 }
 
 interface GlRow {
@@ -81,6 +100,16 @@ interface BankRow {
   subsidiary_id: number;
   account_id: number;
   balance: number | string;
+}
+
+interface CollectionRow {
+  payment_id: number;
+  payment_date: string;
+  subsidiary_id: number;
+  customer_name: string | null;
+  invoice_tranid: string | null;
+  invoice_memo: string | null;
+  amount_applied: number | string;
 }
 
 interface NamedDimRow {
@@ -134,6 +163,15 @@ function num(v: number | string | null | undefined): number {
   return Number.isFinite(n) ? n : 0;
 }
 
+/** 戶口顯示名：去掉層級（"Bank : "）同「Bank - 」prefix，
+ *  例如 "Bank : Bank - Fubon - Current Accounts - M7325110 (PB)"
+ *  → "Fubon - Current Accounts - M7325110 (PB)"。 */
+function cleanAccountName(fullname: string): string {
+  const idx = fullname.lastIndexOf(" : ");
+  const leaf = idx >= 0 ? fullname.slice(idx + 3) : fullname;
+  return leaf.startsWith("Bank - ") ? leaf.slice("Bank - ".length) : leaf;
+}
+
 // ── hydrate ──────────────────────────────────────────────────────────────────
 
 let hydratePromise: Promise<void> | null = null;
@@ -161,10 +199,11 @@ async function doHydrate(): Promise<void> {
     bankRows,
     customers,
     subsidiaries,
+    collectionRows,
   ] = await Promise.all([
     fetchAll<PeriodRow>("dim_period", "id, fy_label, fy_month_no, start_date", ["id"]),
     fetchAll<ReportGroupRow>("report_group", "id, code, label, statement", ["id"]),
-    fetchAll<AccountRow>("dim_account", "id, report_group_id, accttype", ["id"]),
+    fetchAll<AccountRow>("dim_account", "id, report_group_id, accttype, fullname", ["id"]),
     fetchAll<GlRow>(
       "fact_gl",
       "period_id, subsidiary_id, account_id, department_id, debit, credit",
@@ -187,6 +226,11 @@ async function doHydrate(): Promise<void> {
     ),
     fetchAll<NamedDimRow>("dim_customer", "id, name", ["id"]),
     fetchAll<NamedDimRow>("dim_subsidiary", "id, name", ["id"]),
+    fetchAll<CollectionRow>(
+      "fact_collections",
+      "payment_id, payment_date, subsidiary_id, customer_name, invoice_tranid, invoice_memo, amount_applied",
+      ["payment_date", "payment_id"]
+    ),
   ]);
 
   // lookup maps
@@ -271,6 +315,26 @@ async function doHydrate(): Promise<void> {
     todayBySub[Number(k)] = Math.round(todayBySub[Number(k)]);
   }
 
+  // ── 逐個戶口結餘（最新 snapshot，收數週報「Bank balance」段用）
+  const bankAccounts = bankRows
+    .filter((r) => r.as_of_date === latestAsOf)
+    .map((r) => ({
+      subsidiaryId: r.subsidiary_id,
+      accountId: r.account_id,
+      name: cleanAccountName(accountById.get(r.account_id)?.fullname ?? `戶口 #${r.account_id}`),
+      balance: num(r.balance),
+    }));
+
+  // ── 收款明細（fact_collections 已按 payment_date 排序）
+  const collections = collectionRows.map((r) => ({
+    paymentDate: r.payment_date,
+    subsidiaryId: r.subsidiary_id,
+    customerName: r.customer_name,
+    invoiceTranid: r.invoice_tranid ?? "",
+    invoiceMemo: r.invoice_memo,
+    amount: num(r.amount_applied),
+  }));
+
   // ── 30 日 series：而家只有一個 snapshot，先生成一條平線（30 日全用今日值）。
   //    日後每日 sync 會累積真數，到時改為直接讀每日 rows 砌真曲線。
   const points: BankPoint[] = [];
@@ -299,6 +363,12 @@ async function doHydrate(): Promise<void> {
 
   BANK_POINTS.length = 0;
   for (const p of points) BANK_POINTS.push(p);
+
+  BANK_ACCOUNTS.length = 0;
+  for (const a of bankAccounts) BANK_ACCOUNTS.push(a);
+
+  COLLECTIONS.length = 0;
+  for (const c of collections) COLLECTIONS.push(c);
 
   DATA_AS_OF.value = latestAsOf ? `${latestAsOf} sync` : "未有 sync 紀錄";
 }

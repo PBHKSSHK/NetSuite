@@ -23,7 +23,7 @@ import {
   sumFacts,
 } from "@/lib/queries";
 import { CURRENT_FY, PRIOR_FY } from "@/lib/fy";
-import { agiPerFeeEarner, ratioSuite } from "../lib/agency";
+import { agiPerFeeEarner, ratioSuite, runwayBySub } from "../lib/agency";
 
 const YTD = Array.from({ length: ACTUAL_MONTHS }, (_, i) => i + 1);
 
@@ -219,6 +219,29 @@ export default function OverviewPage() {
         </div>
         <p className="text-[11px] text-ink3">比率駁通 NetSuite 即有；fee earner 人數需人手輸入</p>
       </div>
+
+      {/* ── 現金 runway ─────────────────────────────────────────────────── */}
+      <Card title="現金 Runway" subtitle="蝕緊錢嘅公司照而家 burn rate 仲頂到幾耐（近 3 個月平均現金淨流）">
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+          {runwayBySub().map((r) => {
+            const sub = OPERATING_SUBS.find((s) => s.id === r.subsidiaryId);
+            const burning = r.runwayMonths != null;
+            const critical = burning && (r.runwayMonths as number) < 9;
+            return (
+              <div key={r.subsidiaryId} className={`rounded-lg border px-3 py-2 ${critical ? "border-critical/50 bg-critical/5" : "border-ringc"}`}>
+                <div className="text-[11px] text-ink3">{sub?.short}</div>
+                <div className={`text-[17px] font-semibold num ${critical ? "text-critical" : burning ? "text-ink" : "text-deltagood"}`}>
+                  {burning ? `${(r.runwayMonths as number).toFixed(0)} 個月` : "有盈餘"}
+                </div>
+                <div className="text-[11px] text-ink3 mt-0.5">
+                  現金 {hkdCompact(r.cash)} · 每月{r.monthlyNet >= 0 ? "淨流入" : "燒"} {hkdCompact(Math.abs(r.monthlyNet))}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+        <p className="text-[11px] text-ink3 mt-2">駁通 NetSuite 即有（銀行結餘 + 現金流）· 704 已貼近警戒線，runway 一併睇先完整</p>
+      </Card>
 
       <p className="text-[11px] text-ink3">
         去年同期（{PRIOR_FY}）數字為全年入帳版本；合併 = 5 間公司 + Elimination 直接加總（全部 HKD base）。

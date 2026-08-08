@@ -548,3 +548,256 @@ export function associatesSummary(): { name: string; investedCost: number; cumul
     { name: "Go Asia Plus Travel Limited", investedCost: 800_000, cumulativeDividends: 300_000, fyDividends: 0, sharePct: 20 },
   ];
 }
+
+// ═════════════════════════════════════════════════════════════════════════════
+// 第二批功能（2026-08-07）：找數行為、cross-sell、elimination 完整性、
+// PB 中央成本回收、貸款/淨負債/runway、retainer mix、數據完整度。
+// Production 一樣行 Supabase；entryLag() 例外 — 佢嘅統計係 2026-08-07 喺
+// live NetSuite 度量返嚟嘅真實營運數據（唔係虛構）。
+// ═════════════════════════════════════════════════════════════════════════════
+
+// ── 找數行為（payment behaviour）─────────────────────────────────────────────
+
+export interface PaymentBehaviourRow {
+  client: ClientRec;
+  /** 賬期（日） */
+  termsDays: number;
+  /** 之前 12 個月平均實際找數日數 */
+  avgDaysPrior: number;
+  /** 近 3 個月平均 */
+  avgDaysRecent: number;
+  /** +ve = 惡化緊 */
+  deltaDays: number;
+  arOpen: number;
+}
+
+/** 每客實際找數日數趨勢 — aging 係「已經遲」，呢個係「開始遲」。
+ *  Production：由 NetSuite A/R payment history（invoice→payment 配對）計。 */
+const PAY_BEHAVIOUR: Record<string, { terms: number; prior: number; recent: number; ar: number }> = {
+  c05: { terms: 30, prior: 41, recent: 63, ar: 512_000 }, // Vertex Motors — 惡化最勁
+  c26: { terms: 45, prior: 52, recent: 71, ar: 486_000 }, // Orient Air
+  c30: { terms: 30, prior: 38, recent: 52, ar: 291_000 }, // Nova Gadgets
+  c22: { terms: 45, prior: 58, recent: 66, ar: 655_000 }, // Stellar Cruises
+  c01: { terms: 60, prior: 63, recent: 63, ar: 1_120_000 }, // Harbourview — 穩定
+  c13: { terms: 60, prior: 66, recent: 62, ar: 890_000 }, // Lumina Bank — 改善
+  c03: { terms: 45, prior: 47, recent: 44, ar: 468_000 }, // Meridian Bank
+  c14: { terms: 45, prior: 55, recent: 57, ar: 512_000 }, // Northgate
+  c20: { terms: 60, prior: 71, recent: 74, ar: 587_000 }, // Pacific Crown
+  c34: { terms: 30, prior: 39, recent: 36, ar: 187_000 }, // Grand Casa
+  c02: { terms: 45, prior: 49, recent: 51, ar: 402_000 }, // Golden Lion
+  c28: { terms: 30, prior: 33, recent: 31, ar: 154_000 }, // Velocity
+};
+
+export function paymentBehaviour(): PaymentBehaviourRow[] {
+  const rows: PaymentBehaviourRow[] = [];
+  for (const c of BOOK) {
+    const p = PAY_BEHAVIOUR[c.id];
+    if (!p) continue;
+    rows.push({
+      client: toRec(c),
+      termsDays: p.terms,
+      avgDaysPrior: p.prior,
+      avgDaysRecent: p.recent,
+      deltaDays: p.recent - p.prior,
+      arOpen: p.ar,
+    });
+  }
+  return rows.sort((a, b) => b.deltaDays - a.deltaDays);
+}
+
+// ── Cross-sell 滲透（集團獨有）───────────────────────────────────────────────
+
+export interface CrossSellRow {
+  name: string;
+  sector: string;
+  /** subsidiaryId → YTD 收入（0 = 冇幫襯） */
+  revBySub: Record<number, number>;
+  subCount: number;
+  totalRev: number;
+}
+
+/** 每個品牌用緊集團幾多間公司。Production：以 customer 名／master brand
+ *  對照表跨 subsidiary 合併（NetSuite 每間公司獨立 customer record）。 */
+const CROSS_SELL: { name: string; sector: string; rev: [number, number, number, number, number] }[] = [
+  //                                  [PB(1),  SSHK(2), CLS(5),  JM(7),   704(8)]
+  { name: "Harbourview Retail 宏景零售", sector: "零售", rev: [0, 2_390_000, 0, 0, 420_000] },
+  { name: "Meridian Bank 銘峰銀行", sector: "金融", rev: [380_000, 1_120_000, 0, 260_000, 0] },
+  { name: "Pacific Crown Hotels 環冠酒店", sector: "酒店", rev: [0, 0, 0, 1_290_000, 510_000] },
+  { name: "Lumina Bank 朗銀", sector: "金融", rev: [1_760_000, 0, 0, 0, 0] },
+  { name: "Golden Lion F&B 金獅餐飲", sector: "餐飲", rev: [0, 1_405_000, 0, 0, 0] },
+  { name: "Northgate Property 北港置業", sector: "地產", rev: [1_320_000, 0, 0, 0, 380_000] },
+  { name: "Vertex Motors 域陞汽車", sector: "汽車", rev: [0, 638_000, 310_000, 0, 0] },
+  { name: "Regal Jewellery 瑞閣珠寶", sector: "珠寶", rev: [0, 0, 0, 903_000, 0] },
+  { name: "Vela Watches 星帆鐘錶", sector: "鐘錶", rev: [880_000, 0, 0, 0, 0] },
+  { name: "Stellar Cruises 星輝郵輪", sector: "旅遊", rev: [0, 0, 0, 958_000, 0] },
+  { name: "Velocity Auto Parts 迅達汽配", sector: "汽車", rev: [0, 0, 741_000, 0, 0] },
+  { name: "Grand Casa Furnishing 尚居家品", sector: "家品", rev: [0, 0, 0, 0, 995_000] },
+];
+
+const CS_SUB_IDS = [1, 2, 5, 7, 8];
+
+export function crossSell(): CrossSellRow[] {
+  return CROSS_SELL.map((r) => {
+    const revBySub: Record<number, number> = {};
+    r.rev.forEach((v, i) => { revBySub[CS_SUB_IDS[i]] = v; });
+    const subCount = r.rev.filter((v) => v > 0).length;
+    const totalRev = r.rev.reduce((a, b) => a + b, 0);
+    return { name: r.name, sector: r.sector, revBySub, subCount, totalRev };
+  }).sort((a, b) => b.totalRev - a.totalRev);
+}
+
+// ── Elimination 完整性 ───────────────────────────────────────────────────────
+
+export interface ElimPair {
+  from: string;
+  to: string;
+  receivable: number;
+  payable: number;
+  /** receivable − payable；≠0 = interco 唔對數 */
+  diff: number;
+}
+
+/** 每對公司嘅 interco 應收 vs 對方帳上應付 — 應該完全相等。
+ *  Production：25xxx（Due From）對 35xxx（Due To）配對，每月自動檢查。
+ *  Demo 個 4,870 差異對應 2026-08-06 真帳驗證發現嘅 0.08% aging gap。 */
+export function eliminationCheck(): { pairs: ElimPair[]; totalDiff: number } {
+  const pairs: ElimPair[] = [
+    { from: "Social Strategy", to: "Photoblog", receivable: 2_580_000, payable: 2_575_130, diff: 4_870 },
+    { from: "Photoblog", to: "Jervois M", receivable: 1_031_624, payable: 1_031_624, diff: 0 },
+    { from: "Photoblog", to: "704 Production", receivable: 620_400, payable: 620_400, diff: 0 },
+    { from: "Social Strategy", to: "CLS GARAGE", receivable: 312_500, payable: 312_500, diff: 0 },
+    { from: "Photoblog", to: "CLS GARAGE", receivable: 188_700, payable: 188_700, diff: 0 },
+  ];
+  return { pairs, totalDiff: pairs.reduce((a, p) => a + Math.abs(p.diff), 0) };
+}
+
+// ── PB 中央成本回收率 ────────────────────────────────────────────────────────
+
+/** Photoblog Admin/IT/Mgt 三個 pool 嘅成本 vs 收返嘅 management fee +
+ *  reimbursement。<100% = PB 補貼緊成個集團（Mar25 真帳：pool 480K、
+ *  收返 385K+67K，睇 docs/allocation-rules.md）。 */
+export function pbRecoveryRate(): { month: number; pool: number; recovered: number; ratePct: number }[] {
+  const POOL = [472_000, 466_000, 488_000, 494_000];
+  const RECOVERED = [381_000, 392_000, 379_000, 402_000];
+  return YTD.map((m) => ({
+    month: m,
+    pool: POOL[m - 1],
+    recovered: RECOVERED[m - 1],
+    ratePct: round1((100 * RECOVERED[m - 1]) / POOL[m - 1]),
+  }));
+}
+
+// ── 貸款、淨負債、runway ─────────────────────────────────────────────────────
+
+export interface Loan {
+  bank: string;
+  ref: string;
+  subsidiaryId: number;
+  balance: number;
+  monthlyRepayment: number;
+  ratePct: number;
+  maturity: string;
+}
+
+/** 9 筆銀行貸款 — 結構跟真實 CoA 31xxx（Fubon/SCB/恒生×4/HSBC×2/OCBC）。 */
+export function loanBook(): Loan[] {
+  return [
+    { bank: "Hang Seng", ref: "271-708638", subsidiaryId: 2, balance: 1_420_000, monthlyRepayment: 62_000, ratePct: 5.1, maturity: "2028-09" },
+    { bank: "Hang Seng", ref: "271-805368", subsidiaryId: 2, balance: 1_180_000, monthlyRepayment: 54_000, ratePct: 5.4, maturity: "2028-03" },
+    { bank: "HSBC", ref: "040-126393-165", subsidiaryId: 1, balance: 960_000, monthlyRepayment: 45_000, ratePct: 5.2, maturity: "2027-12" },
+    { bank: "Hang Seng", ref: "271-824450", subsidiaryId: 2, balance: 720_000, monthlyRepayment: 38_000, ratePct: 5.6, maturity: "2027-08" },
+    { bank: "OCBC", ref: "0830-370811", subsidiaryId: 2, balance: 690_000, monthlyRepayment: 31_000, ratePct: 4.9, maturity: "2028-06" },
+    { bank: "Fubon", ref: "660-883822", subsidiaryId: 1, balance: 540_000, monthlyRepayment: 30_000, ratePct: 5.8, maturity: "2027-06" },
+    { bank: "HSBC", ref: "040-126393-166", subsidiaryId: 1, balance: 460_000, monthlyRepayment: 24_000, ratePct: 5.2, maturity: "2027-10" },
+    { bank: "SCB", ref: "51849461", subsidiaryId: 1, balance: 310_000, monthlyRepayment: 19_000, ratePct: 6.1, maturity: "2027-03" },
+    { bank: "Hang Seng", ref: "997-006036", subsidiaryId: 2, balance: 265_000, monthlyRepayment: 15_000, ratePct: 5.5, maturity: "2027-05" },
+  ];
+}
+
+/** 集團現金 vs 銀行負債逐月 — 淨現金一條線。 */
+export function netDebtTrend(): { month: number; cash: number; debt: number; net: number }[] {
+  const CASH = [7_690_000, 7_820_000, 7_950_000, 8_010_000];
+  const DEBT = [7_030_000, 6_880_000, 6_730_000, 6_545_000];
+  return YTD.map((m) => ({ month: m, cash: CASH[m - 1], debt: DEBT[m - 1], net: CASH[m - 1] - DEBT[m - 1] }));
+}
+
+export interface RunwayRow {
+  subsidiaryId: number;
+  cash: number;
+  /** 近 3 個月平均每月現金淨流（−ve = 燒緊錢） */
+  monthlyNet: number;
+  /** null = 有錢賺，冇 runway 問題 */
+  runwayMonths: number | null;
+}
+
+export function runwayBySub(): RunwayRow[] {
+  return [
+    { subsidiaryId: 1, cash: 2_157_000, monthlyNet: 85_000, runwayMonths: null },
+    { subsidiaryId: 2, cash: 3_755_000, monthlyNet: 172_000, runwayMonths: null },
+    { subsidiaryId: 5, cash: 731_000, monthlyNet: -48_000, runwayMonths: 15.2 },
+    { subsidiaryId: 7, cash: 620_000, monthlyNet: 21_000, runwayMonths: null },
+    { subsidiaryId: 8, cash: 748_000, monthlyNet: -96_000, runwayMonths: 7.8 },
+  ];
+}
+
+// ── Retainer vs Project 收入 mix ─────────────────────────────────────────────
+
+/** 收入穩定度：recurring（retainer）收入佔比逐月。
+ *  Production：backlog coverage 同一份 retainer 合約清單，一份 input 兩個功能。 */
+export function revenueMix(): { month: number; retainerRev: number; projectRev: number; retainerPct: number }[] {
+  const RETAINER_SHARE = [0.58, 0.55, 0.53, 0.54];
+  return YTD.map((m) => {
+    const total = sumFacts({ fy: CURRENT_FY, kind: "actual", subIds: ALL_SUB_IDS, months: [m], groups: REV_CODES });
+    const retainerRev = Math.round(total * RETAINER_SHARE[m - 1]);
+    return {
+      month: m,
+      retainerRev,
+      projectRev: Math.round(total - retainerRev),
+      retainerPct: round1(RETAINER_SHARE[m - 1] * 100),
+    };
+  });
+}
+
+// ── 數據完整度／遲入單（BvA 可信度）──────────────────────────────────────────
+
+export interface EntryLagRow {
+  subsidiaryId: number;
+  /** 供應商單：transaction date → 入系統平均日數 */
+  avgLagBillDays: number;
+  /** 供應商單遲 >60 日比例（%） */
+  billsOver60Pct: number;
+}
+
+/** ⚠️ 呢啲係真實統計 — 2026-08-07 喺 live NetSuite 度量
+ *  （FY2025/26 起 VendBill 嘅 createddate − trandate）。唔係 demo 數。 */
+export function entryLag(): { rows: EntryLagRow[]; invoiceAvgDays: number; journalAvgDays: number } {
+  return {
+    rows: [
+      { subsidiaryId: 8, avgLagBillDays: 55.9, billsOver60Pct: 29.2 },
+      { subsidiaryId: 2, avgLagBillDays: 43.7, billsOver60Pct: 23.9 },
+      { subsidiaryId: 5, avgLagBillDays: 43.6, billsOver60Pct: 22.8 },
+      { subsidiaryId: 1, avgLagBillDays: 27.7, billsOver60Pct: 10.8 },
+      { subsidiaryId: 7, avgLagBillDays: 24.9, billsOver60Pct: 5.2 },
+    ],
+    invoiceAvgDays: 22.8,
+    journalAvgDays: 39.6,
+  };
+}
+
+export interface CompletenessRow {
+  month: number;
+  /** 估計成本數據已入齊幾多 %（由歷史 lag 曲線推算） */
+  estCompletePct: number;
+  status: "final" | "partial";
+}
+
+/** 每月成本數據成熟度 — 近兩個月睇 BvA 要留意「使少咗」可能只係未入單。
+ *  Production：用該公司歷史 lag 分佈推算（IBNR 式 completion factor）。 */
+export function completeness(): CompletenessRow[] {
+  return [
+    { month: 1, estCompletePct: 98, status: "final" },
+    { month: 2, estCompletePct: 95, status: "final" },
+    { month: 3, estCompletePct: 86, status: "partial" },
+    { month: 4, estCompletePct: 68, status: "partial" },
+  ];
+}

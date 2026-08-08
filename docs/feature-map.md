@@ -85,6 +85,22 @@
 | **704 製作線**：器材/shoot day 使用率、day-rate 回收 vs 折舊 | 🟡（shoot days 要記錄） |
 | **聯營公司**：投資成本 vs 累計股息（3 間） | 🟢 |
 
+## 第二批功能（2026-08-07 加入）
+
+| 功能 | 位置 | 級別 |
+|------|------|------|
+| **找數行為分數**（邊個客開始遲找數） | /clients | 🟢（invoice→payment 配對歷史） |
+| **Cross-sell 滲透矩陣**（品牌 × 5 間公司） | /clients | 🟢（跨公司 customer 名對照） |
+| **Interco 對數監察**（應收 = 對方應付？） | /balance-sheet | 🟢 |
+| **貸款一覽 + 淨現金**（9 筆銀行貸款） | /balance-sheet | 🟢 結餘；🟡 還款 schedule |
+| **現金 Runway**（燒錢公司仲頂到幾耐） | / 總覽 | 🟢 |
+| **PB 中央成本回收率**（PB 補貼緊集團幾多） | /cost-center | 🟢 |
+| **Retainer vs Project 收入穩定度** | /budget | 🟡（同 backlog 共用 retainer 清單） |
+| **數據完整度／遲入單**（BvA 可信度） | /budget | 🟢 —— 而且**入單延遲統計已經係真數**：2026-08-07 量自 live NetSuite（供應商單平均遲：704=56 日、SSHK=44、CLS=44、PB=28、JM=25；18% 遲逾 60 日） |
+
+「遲入單」設計要點：近月 BvA 標「數據未齊」＋完整度 %（按歷史 lag 曲線估算，IBNR 式）——
+避免「使少咗」其實只係未入單嘅錯覺；個延遲統計表本身可作 managers 入單 KPI。
+
 ## 一句總結
 
 **🟢 佔大多數**——credentials 一到手、sync 起好（1–2 個工作天）就自動轉真數。

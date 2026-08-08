@@ -18,7 +18,9 @@ import {
   churnStats,
   clientPnl,
   creditExposure,
+  crossSell,
   newVsExisting,
+  paymentBehaviour,
   pitchStats,
 } from "@/lib/agency";
 import { subsidiaryById } from "@/lib/dims";
@@ -371,6 +373,133 @@ export default function ClientsPage() {
         </div>
         <SourceNote>需人手輸入（NetSuite opportunities 未啟用）</SourceNote>
       </Card>
+
+      {/* ── 6. 找數行為 ─────────────────────────────────────────────────── */}
+      <PaymentBehaviourCard />
+
+      {/* ── 7. Cross-sell 滲透 ──────────────────────────────────────────── */}
+      <CrossSellCard />
     </div>
+  );
+}
+
+const CS_SUBS = [1, 2, 5, 7, 8];
+
+function PaymentBehaviourCard() {
+  const rows = paymentBehaviour();
+  const worsening = rows.filter((r) => r.deltaDays >= 8);
+  return (
+    <Card
+      title="找數行為 Payment Behaviour"
+      subtitle="每客實際找數日數趨勢 — aging 話你知邊個已經遲，呢度話你知邊個開始遲"
+    >
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-3 max-w-xl">
+        <MiniTile
+          label="惡化中客戶"
+          value={`${worsening.length} 個`}
+          note="近 3 個月比之前慢 ≥8 日"
+          bad={worsening.length > 0}
+        />
+        <MiniTile
+          label="惡化客戶未收數"
+          value={hkdCompact(worsening.reduce((a, r) => a + r.arOpen, 0))}
+          note="提早跟收，好過遲啲追"
+          bad
+        />
+      </div>
+      <div className="overflow-x-auto">
+        <table className="report-table w-full text-[13px]">
+          <thead>
+            <tr>
+              <th className="text-left">客戶</th>
+              <th className="num">賬期</th>
+              <th className="num">之前平均</th>
+              <th className="num">近 3 個月</th>
+              <th className="num">變化</th>
+              <th className="num">未收 A/R</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => {
+              const bad = r.deltaDays >= 8;
+              const good = r.deltaDays <= -3;
+              return (
+                <tr key={r.client.id}>
+                  <td className={`text-left ${bad ? "text-critical font-medium" : ""}`}>{r.client.name}</td>
+                  <td className="num text-ink3">{r.termsDays} 日</td>
+                  <td className="num text-ink2">{r.avgDaysPrior} 日</td>
+                  <td className={`num ${bad ? "text-critical font-semibold" : ""}`}>{r.avgDaysRecent} 日</td>
+                  <td className={`num ${bad ? "text-critical" : good ? "text-deltagood" : "text-ink3"}`}>
+                    {r.deltaDays > 0 ? `+${r.deltaDays}` : r.deltaDays} 日
+                  </td>
+                  <td className="num">{hkd(r.arOpen)}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+      <SourceNote>駁通 NetSuite 即有（invoice → payment 配對歷史）</SourceNote>
+    </Card>
+  );
+}
+
+function CrossSellCard() {
+  const rows = crossSell();
+  const single = rows.filter((r) => r.subCount === 1);
+  return (
+    <Card
+      title="Cross-sell 滲透 Cross-sell Matrix"
+      subtitle="每個品牌用緊集團幾多間公司 — 最平嘅增長嚟自現有客"
+    >
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-3 max-w-xl">
+        <MiniTile
+          label="只用 1 間公司嘅大客"
+          value={`${single.length} / ${rows.length}`}
+          note="全部係 cross-sell 機會"
+        />
+        <MiniTile
+          label="單一公司大客收入"
+          value={hkdCompact(single.reduce((a, r) => a + r.totalRev, 0))}
+          note="YTD — 介紹俾兄弟公司嘅本錢"
+        />
+      </div>
+      <div className="overflow-x-auto">
+        <table className="report-table w-full text-[13px]">
+          <thead>
+            <tr>
+              <th className="text-left">品牌</th>
+              <th className="text-left">行業</th>
+              {CS_SUBS.map((id) => (
+                <th key={id} className="num">{subsidiaryById(id)?.short}</th>
+              ))}
+              <th className="num">用咗</th>
+              <th className="num">YTD 合計</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={r.name}>
+                <td className="text-left">{r.name}</td>
+                <td className="text-left text-ink3">{r.sector}</td>
+                {CS_SUBS.map((id) => {
+                  const v = r.revBySub[id] ?? 0;
+                  return (
+                    <td key={id} className={`num ${v ? "" : "text-ink3/40"}`}>
+                      {v ? hkdCompact(v) : "·"}
+                    </td>
+                  );
+                })}
+                <td className={`num font-medium ${r.subCount >= 2 ? "text-deltagood" : "text-ink3"}`}>
+                  {r.subCount}/5
+                </td>
+                <td className="num">{hkd(r.totalRev)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <SourceNote>駁通 NetSuite 即有（跨公司 customer 名對照合併）</SourceNote>
+    </Card>
   );
 }

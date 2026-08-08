@@ -13,7 +13,7 @@ import { hkdCompact, pct } from "@/lib/format";
 import { ACTUAL_MONTHS, fyMonthLabel } from "@/lib/fy";
 import { pnlRows, pnlTrend } from "@/lib/queries";
 import { subsidiaryById } from "@/lib/dims";
-import { backlogCoverage } from "../../lib/agency";
+import { backlogCoverage, completeness, entryLag, revenueMix } from "../../lib/agency";
 
 const YTD = Array.from({ length: ACTUAL_MONTHS }, (_, i) => i + 1);
 const FULL_YEAR = Array.from({ length: 12 }, (_, i) => i + 1);
@@ -164,6 +164,102 @@ export default function BudgetPage() {
           </table>
         </div>
         <p className="text-[11px] text-ink3 mt-2">需人手輸入（retainer／已簽 SOW 清單）；預算本身亦係人手 import</p>
+      </Card>
+
+      {/* ── 數據完整度（遲入單） ─────────────────────────────────────────── */}
+      <Card
+        title="數據完整度 Data Completeness"
+        subtitle="睇 BvA 之前先睇呢度 — 近月「使少咗」好可能只係未入單"
+      >
+        <div className="grid lg:grid-cols-2 gap-4">
+          <div>
+            <div className="text-[12px] text-ink2 mb-2 font-medium">每月成本數據成熟度（估算）</div>
+            <div className="space-y-2">
+              {completeness().map((c) => (
+                <div key={c.month}>
+                  <div className="flex justify-between text-[12px] mb-0.5">
+                    <span className="text-ink2">
+                      {fyMonthLabel(c.month)}
+                      {c.status === "partial" && (
+                        <span className="ml-1.5 text-[10px] px-1.5 py-0.5 rounded bg-warn/15 text-ink2 border border-warn/40">數據未齊</span>
+                      )}
+                    </span>
+                    <span className={`num ${c.estCompletePct < 90 ? "text-critical" : "text-ink2"}`}>{c.estCompletePct}%</span>
+                  </div>
+                  <div className="h-2 rounded-full bg-ink3/10 overflow-hidden">
+                    <div
+                      className={`h-full rounded-full ${c.estCompletePct < 90 ? "bg-critical/70" : "bg-accent/70"}`}
+                      style={{ width: `${c.estCompletePct}%` }}
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+            <p className="text-[11px] text-ink3 mt-2">
+              7 月成本估計只入咗約 68%——BvA 嗰行「慳咗」要打折扣睇。Production 用各公司歷史 lag 曲線推算（IBNR 式 completion factor）。
+            </p>
+          </div>
+          <div>
+            <div className="text-[12px] text-ink2 mb-2 font-medium">
+              入單延遲（<span className="text-ink">真實統計</span> · 2026-08-07 量自 live NetSuite）
+            </div>
+            <div className="overflow-x-auto">
+              <table className="report-table w-full text-[13px]">
+                <thead>
+                  <tr>
+                    <th className="text-left">公司</th>
+                    <th className="num">供應商單平均遲</th>
+                    <th className="num">遲 &gt;60 日</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {entryLag().rows.map((r) => (
+                    <tr key={r.subsidiaryId}>
+                      <td className="text-left">{subsidiaryById(r.subsidiaryId)?.short}</td>
+                      <td className={`num ${r.avgLagBillDays > 40 ? "text-critical font-medium" : ""}`}>{r.avgLagBillDays} 日</td>
+                      <td className={`num ${r.billsOver60Pct > 20 ? "text-critical" : "text-ink2"}`}>{r.billsOver60Pct}%</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <p className="text-[11px] text-ink3 mt-2">
+              銷售發票平均遲 {entryLag().invoiceAvgDays} 日。目標：單月內入齊（lag &lt;15 日）——呢個表本身就係俾 managers 嘅 KPI。
+            </p>
+          </div>
+        </div>
+      </Card>
+
+      {/* ── Retainer vs Project mix ─────────────────────────────────────── */}
+      <Card
+        title="收入穩定度 Retainer vs Project"
+        subtitle="Recurring 收入佔比 — agency 抗跌力同估值嘅核心"
+      >
+        <div className="overflow-x-auto">
+          <table className="report-table w-full text-[13px] max-w-2xl">
+            <thead>
+              <tr>
+                <th className="text-left">月份</th>
+                <th className="num">Retainer 收入</th>
+                <th className="num">Project 收入</th>
+                <th className="num">Retainer 佔比</th>
+              </tr>
+            </thead>
+            <tbody>
+              {revenueMix().map((m) => (
+                <tr key={m.month}>
+                  <td className="text-left">{fyMonthLabel(m.month)}</td>
+                  <td className="num">{hkdCompact(m.retainerRev)}</td>
+                  <td className="num text-ink2">{hkdCompact(m.projectRev)}</td>
+                  <td className={`num font-medium ${m.retainerPct >= 55 ? "text-deltagood" : "text-ink2"}`}>{m.retainerPct}%</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <p className="text-[11px] text-ink3 mt-2">
+          健康參考：recurring ≥50% 算穩陣。同上面 backlog coverage 共用同一份 retainer 清單——一份 input 兩個功能。
+        </p>
       </Card>
 
       <Card title="Budget master 管理（Phase 2）" subtitle="設計已定，等候會計確認 §9.2（ORIGINAL 數字來源及 granularity）">

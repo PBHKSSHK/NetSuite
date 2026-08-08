@@ -5,10 +5,11 @@
 
 import { FilterBar } from "@/components/filter-bar";
 import { Card, ExportButton, exportCsv } from "@/components/ui";
+import { eliminationCheck, loanBook, netDebtTrend } from "@/lib/agency";
 import { BS_SECTION_LABELS } from "@/lib/dims";
 import { useFilters } from "@/lib/filters";
 import { hkd, hkdCompact } from "@/lib/format";
-import { fyMonthEnd } from "@/lib/fy";
+import { fyMonthEnd, fyMonthLabel } from "@/lib/fy";
 import { ageBuckets, apItems, arItems, balanceSheet } from "@/lib/queries";
 import { subsidiaryById } from "@/lib/dims";
 import Link from "next/link";
@@ -109,6 +110,106 @@ export default function BalanceSheetPage() {
       <p className="text-[11px] text-ink3">
         合併版 = 直加含 Elimination；production 如與 NetSuite consolidated report（subsidiary -1）有差異，會列「對數差異」提示（§10.4 驗收項 3）。
       </p>
+
+      {/* ── 貸款與淨負債 ─────────────────────────────────────────────────── */}
+      <Card title="貸款與淨負債 Loans & Net Debt" subtitle="9 筆銀行貸款（結構跟真實 CoA 31xxx）· 集團現金 vs 負債">
+        <div className="grid lg:grid-cols-3 gap-4">
+          <div className="lg:col-span-2 overflow-x-auto">
+            <table className="report-table w-full text-[13px]">
+              <thead>
+                <tr>
+                  <th className="text-left">銀行</th>
+                  <th className="text-left">編號</th>
+                  <th className="text-left">公司</th>
+                  <th className="num">結餘</th>
+                  <th className="num">月供</th>
+                  <th className="num">息率</th>
+                  <th className="num">到期</th>
+                </tr>
+              </thead>
+              <tbody>
+                {loanBook().map((l) => (
+                  <tr key={l.ref}>
+                    <td className="text-left">{l.bank}</td>
+                    <td className="text-left text-ink3">{l.ref}</td>
+                    <td className="text-left text-ink2">{subsidiaryById(l.subsidiaryId)?.short}</td>
+                    <td className="num">{hkd(l.balance)}</td>
+                    <td className="num text-ink2">{hkd(l.monthlyRepayment)}</td>
+                    <td className="num text-ink2">{l.ratePct.toFixed(1)}%</td>
+                    <td className="num text-ink3">{l.maturity}</td>
+                  </tr>
+                ))}
+                <tr className="subtotal">
+                  <td className="text-left" colSpan={3}>合計</td>
+                  <td className="num">{hkd(loanBook().reduce((a, l) => a + l.balance, 0))}</td>
+                  <td className="num">{hkd(loanBook().reduce((a, l) => a + l.monthlyRepayment, 0))}</td>
+                  <td className="num" colSpan={2}></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div className="space-y-2">
+            {netDebtTrend().slice(-1).map((t) => (
+              <div key={t.month} className="rounded-lg border border-ringc px-3 py-2 text-[12px]">
+                <span className="text-ink3">淨現金（現金 − 銀行負債）· {fyMonthLabel(t.month)}</span>
+                <div className={`font-semibold num text-lg ${t.net >= 0 ? "text-deltagood" : "text-critical"}`}>
+                  {hkdCompact(t.net)}
+                </div>
+                <div className="text-ink3 mt-1">
+                  現金 {hkdCompact(t.cash)} · 負債 {hkdCompact(t.debt)} · 每月還款佔現金流出 {hkdCompact(loanBook().reduce((a, l) => a + l.monthlyRepayment, 0))}
+                </div>
+              </div>
+            ))}
+            <div className="rounded-lg border border-ringc px-3 py-2 text-[12px]">
+              <span className="text-ink3">淨現金走勢（4–7 月）</span>
+              {netDebtTrend().map((t) => (
+                <div key={t.month} className="flex justify-between">
+                  <span className="text-ink3">{fyMonthLabel(t.month)}</span>
+                  <span className="num">{hkdCompact(t.net)}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+        <p className="text-[11px] text-ink3 mt-2">真數來源：結餘駁通 NetSuite 即有（31xxx）；還款 schedule 需人手輸入（貸款合約）</p>
+      </Card>
+
+      {/* ── Elimination 完整性 ───────────────────────────────────────────── */}
+      <Card title="Interco 對數監察 Elimination Check" subtitle="每對公司：我帳上應收 = 對方帳上應付？唔對嘅 pair 即刻現形">
+        <div className="overflow-x-auto">
+          <table className="report-table w-full text-[13px] max-w-3xl">
+            <thead>
+              <tr>
+                <th className="text-left">應收方</th>
+                <th className="text-left">應付方</th>
+                <th className="num">應收帳</th>
+                <th className="num">對方應付帳</th>
+                <th className="num">差異</th>
+                <th className="text-left">狀態</th>
+              </tr>
+            </thead>
+            <tbody>
+              {eliminationCheck().pairs.map((p) => (
+                <tr key={`${p.from}-${p.to}`}>
+                  <td className="text-left">{p.from}</td>
+                  <td className="text-left">{p.to}</td>
+                  <td className="num">{hkd(p.receivable)}</td>
+                  <td className="num">{hkd(p.payable)}</td>
+                  <td className={`num ${p.diff !== 0 ? "text-critical font-semibold" : "text-ink3"}`}>
+                    {p.diff !== 0 ? hkd(p.diff) : "—"}
+                  </td>
+                  <td className={`text-left ${p.diff !== 0 ? "text-critical" : "text-deltagood"}`}>
+                    {p.diff !== 0 ? "✗ 要查" : "✓ 對數"}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <p className="text-[11px] text-ink3 mt-2">
+          真數來源：駁通 NetSuite 即有（25xxx Due From 對 35xxx Due To 自動配對，每月檢查；NetSuite 亦有現成 Intercompany Reconciliation report 可對照）。Demo 嗰筆 $4,870 差異對應 2026-08-06 真帳驗證發現嘅 aging gap。
+        </p>
+      </Card>
     </div>
   );
 }

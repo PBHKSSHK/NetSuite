@@ -10,8 +10,9 @@ import { Card, ExportButton, exportCsv } from "@/components/ui";
 import { DEPARTMENTS, OPERATING_SUBS, subsidiaryById } from "@/lib/dims";
 import { useFilters } from "@/lib/filters";
 import { hkd, hkdCompact, pct } from "@/lib/format";
-import { periodLabel } from "@/lib/fy";
+import { fyMonthLabel, periodLabel } from "@/lib/fy";
 import { allocationForPeriod, costCenterMatrix, taggingTrend } from "@/lib/queries";
+import { pbRecoveryRate } from "../../lib/agency";
 
 export default function CostCenterPage() {
   const f = useFilters();
@@ -194,6 +195,53 @@ export default function CostCenterPage() {
         </div>
         <p className="text-[11px] text-ink3 mt-2">
           Rules 存 <code>alloc_rules</code>（method = GP_RATIO），production 由會計喺 admin UI 調整。
+        </p>
+      </Card>
+
+      {/* ── PB 中央成本回收率 ────────────────────────────────────────────── */}
+      <Card
+        title="PB 中央成本回收率 Central Cost Recovery"
+        subtitle="Photoblog Admin/IT/Mgt pool vs 收返嘅 management fee + reimbursement — <100% 即係 PB 補貼緊集團"
+      >
+        <div className="overflow-x-auto">
+          <table className="report-table w-full text-[13px] max-w-2xl">
+            <thead>
+              <tr>
+                <th className="text-left">月份</th>
+                <th className="num">中央成本 pool</th>
+                <th className="num">已回收</th>
+                <th className="num">回收率</th>
+                <th className="num">PB 補貼</th>
+              </tr>
+            </thead>
+            <tbody>
+              {pbRecoveryRate().map((r) => (
+                <tr key={r.month}>
+                  <td className="text-left">{fyMonthLabel(r.month)}</td>
+                  <td className="num">{hkd(r.pool)}</td>
+                  <td className="num text-ink2">{hkd(r.recovered)}</td>
+                  <td className={`num font-medium ${r.ratePct < 90 ? "text-critical" : "text-ink2"}`}>{r.ratePct}%</td>
+                  <td className="num text-critical">{hkd(r.pool - r.recovered)}</td>
+                </tr>
+              ))}
+              <tr className="subtotal">
+                <td className="text-left">YTD</td>
+                <td className="num">{hkd(pbRecoveryRate().reduce((a, r) => a + r.pool, 0))}</td>
+                <td className="num">{hkd(pbRecoveryRate().reduce((a, r) => a + r.recovered, 0))}</td>
+                <td className="num">
+                  {(
+                    (100 * pbRecoveryRate().reduce((a, r) => a + r.recovered, 0)) /
+                    pbRecoveryRate().reduce((a, r) => a + r.pool, 0)
+                  ).toFixed(1)}
+                  %
+                </td>
+                <td className="num text-critical">{hkd(pbRecoveryRate().reduce((a, r) => a + (r.pool - r.recovered), 0))}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p className="text-[11px] text-ink3 mt-2">
+          駁通 NetSuite 即有（pool = PB 三個 dept 成本；回收 = 60000022 Management Fee Income + Share of Expenses journals）。真帳參考：Mar 2025 pool ~480K、收返 ~452K（見 docs/allocation-rules.md）。決策問題：條 gap 係咪應該收埋 associates／提高 GP% 分攤？
         </p>
       </Card>
     </div>

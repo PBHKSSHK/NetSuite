@@ -67,6 +67,14 @@ export const CLIENT_REVENUE: {
 /** 未收 A/R 按客戶合計（由 fact_ar_open 嘅 customer_id 砌，唔使多一次 fetch） */
 export const AR_BY_CUSTOMER = new Map<number, number>();
 
+/** 供應商付款（出數）明細（fact_disbursements，payment_date 升序） */
+export const DISBURSEMENTS: {
+  paymentDate: string;
+  subsidiaryId: number;
+  vendorName: string | null;
+  amount: number;
+}[] = [];
+
 // ── Supabase row shapes ──────────────────────────────────────────────────────
 
 interface PeriodRow {
@@ -247,6 +255,7 @@ async function doHydrate(): Promise<void> {
     collectionRows,
     clientInfoRows,
     clientRevenueRows,
+    disbursementRows,
   ] = await Promise.all([
     fetchAll<PeriodRow>("dim_period", "id, fy_label, fy_month_no, start_date", ["id"]),
     fetchAll<ReportGroupRow>("report_group", "id, code, label, statement", ["id"]),
@@ -287,6 +296,11 @@ async function doHydrate(): Promise<void> {
       "fact_client_revenue",
       "customer_id, subsidiary_id, ym, amount",
       ["customer_id", "subsidiary_id", "ym"]
+    ),
+    fetchAll<{ payment_id: number; payment_date: string; subsidiary_id: number; vendor_name: string | null; amount: number | string }>(
+      "fact_disbursements",
+      "payment_id, payment_date, subsidiary_id, vendor_name, amount",
+      ["payment_date", "payment_id"]
     ),
   ]);
 
@@ -459,6 +473,16 @@ async function doHydrate(): Promise<void> {
 
   AR_BY_CUSTOMER.clear();
   for (const [k, v] of arByCustomer) AR_BY_CUSTOMER.set(k, v);
+
+  DISBURSEMENTS.length = 0;
+  for (const d of disbursementRows) {
+    DISBURSEMENTS.push({
+      paymentDate: d.payment_date,
+      subsidiaryId: d.subsidiary_id,
+      vendorName: d.vendor_name,
+      amount: num(d.amount),
+    });
+  }
 
   DATA_AS_OF.value = latestAsOf ? `${latestAsOf} sync` : "未有 sync 紀錄";
 }

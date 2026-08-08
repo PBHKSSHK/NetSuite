@@ -12,11 +12,44 @@ import { hkd, hkdCompact, pct, variancePct } from "@/lib/format";
 import { fyMonthLabel, periodLabel } from "@/lib/fy";
 import { allocationForPeriod, pnlRows, pnlTrend } from "@/lib/queries";
 import { subsidiaryById } from "@/lib/dims";
+import { CLIENT_INFO, CLIENT_REVENUE } from "@/lib/store";
+import { fyMonthFull } from "@/lib/fy";
+
+/** 揀選期間+公司嘅每客開票貢獻（top 12 + 其餘合計）。
+ *  以 invoice 總額計——同 GL 收入行可能有細微差異（invoice 或含非收入項）。 */
+function clientContribution(subSel: number, months: number[], totalRev: number) {
+  const yms = new Set(months.map((m) => fyMonthFull(m)));
+  const info = new Map(CLIENT_INFO.map((c) => [c.customerId, c]));
+  const byClient = new Map<number, number>();
+  for (const r of CLIENT_REVENUE) {
+    if (!yms.has(r.ym)) continue;
+    if (subSel !== -1 && r.subsidiaryId !== subSel) continue;
+    byClient.set(r.customerId, (byClient.get(r.customerId) ?? 0) + r.amount);
+  }
+  const all = [...byClient.entries()]
+    .map(([id, amount]) => ({
+      name: info.get(id)?.name ?? `客戶 #${id}`,
+      isRelated: info.get(id)?.isRelated ?? false,
+      amount: Math.round(amount),
+      sharePct: totalRev ? (100 * amount) / totalRev : 0,
+    }))
+    .sort((a, b) => b.amount - a.amount);
+  const top = all.slice(0, 12);
+  const rest = all.slice(12);
+  if (rest.length) {
+    const restAmt = rest.reduce((a, r) => a + r.amount, 0);
+    top.push({ name: `其餘 ${rest.length} 個客`, isRelated: false, amount: restAmt, sharePct: totalRev ? (100 * restAmt) / totalRev : 0 });
+  }
+  return top;
+}
 
 export default function PnLPage() {
   const f = useFilters();
   const [metric, setMetric] = useState<"REV" | "GP" | "AGI" | "NP">("NP");
+  const [showClients, setShowClients] = useState(false);
   const rows = pnlRows(f.subsidiary, f.months, f.allocated);
+  const revTotal = rows.find((r) => r.code === "TOTAL_REV")?.actual ?? 0;
+  const clientBreakdown = clientContribution(f.subsidiary, f.months, revTotal);
   const trend = pnlTrend(f.subsidiary, metric).map((d) => ({ label: fyMonthLabel(d.month), ...d }));
   const alloc = f.allocated && f.subsidiary !== -1 ? allocationForPeriod(f.months, "actual") : null;
 
@@ -60,19 +93,44 @@ export default function PnLPage() {
                 const varP = variancePct(r.actual, r.budget);
                 // favourable: income rows above budget / expense rows below budget
                 const favourable = r.sign === 1 ? varAmt >= 0 : varAmt <= 0;
+                const isRevTotal = r.code === "TOTAL_REV";
                 return (
-                  <tr key={r.code} className={r.kind === "subtotal" ? "subtotal" : ""}>
-                    <td className={`text-left ${r.kind === "group" ? "pl-5 text-ink2" : ""}`}>{r.label}</td>
-                    <td className="num">{hkd(r.actual)}</td>
-                    <td className="num text-ink2">{hkd(r.budget)}</td>
-                    <td className={`num ${Math.abs(varAmt) < 1 ? "text-ink3" : favourable ? "text-deltagood" : "text-critical"}`}>
-                      {hkdCompact(varAmt)}
-                    </td>
-                    <td className={`num ${varP == null ? "text-ink3" : favourable ? "text-deltagood" : "text-critical"}`}>
-                      {varP == null ? "—" : pct(varP)}
-                    </td>
-                    <td className="num text-ink2">{hkd(r.ly)}</td>
-                  </tr>
+                  <>
+                    <tr key={r.code} className={r.kind === "subtotal" ? "subtotal" : ""}>
+                      <td className={`text-left ${r.kind === "group" ? "pl-5 text-ink2" : ""}`}>
+                        {r.label}
+                        {isRevTotal && (
+                          <button
+                            onClick={() => setShowClients((v) => !v)}
+                            className="ml-2 text-[11px] text-accent hover:underline font-normal"
+                          >
+                            {showClients ? "▾ 收起客戶" : "▸ 按客戶睇"}
+                          </button>
+                        )}
+                      </td>
+                      <td className="num">{hkd(r.actual)}</td>
+                      <td className="num text-ink2">{hkd(r.budget)}</td>
+                      <td className={`num ${Math.abs(varAmt) < 1 ? "text-ink3" : favourable ? "text-deltagood" : "text-critical"}`}>
+                        {hkdCompact(varAmt)}
+                      </td>
+                      <td className={`num ${varP == null ? "text-ink3" : favourable ? "text-deltagood" : "text-critical"}`}>
+                        {varP == null ? "—" : pct(varP)}
+                      </td>
+                      <td className="num text-ink2">{hkd(r.ly)}</td>
+                    </tr>
+                    {isRevTotal &&
+                      showClients &&
+                      clientBreakdown.map((c) => (
+                        <tr key={`cl-${c.name}`} className="bg-ink3/5">
+                          <td className="text-left pl-8 text-[12px] text-ink2">{c.name}</td>
+                          <td className="num text-[12px]">{hkd(c.amount)}</td>
+                          <td className="num text-[12px] text-ink3" colSpan={3}>
+                            佔收入 {c.sharePct.toFixed(1)}%
+                          </td>
+                          <td className="num text-[12px] text-ink3">{c.isRelated ? "集團內" : ""}</td>
+                        </tr>
+                      ))}
+                  </>
                 );
               })}
             </tbody>

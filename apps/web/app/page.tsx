@@ -3,15 +3,15 @@
 // 集團總覽 — landing page (blueprint §6.1 owner view + §6.2 agency KPIs + §6.5 alerts)
 
 import Link from "next/link";
+import { useState } from "react";
 import { BankTrendChart, MonthTrendChart } from "@/components/charts";
-import { AlertRow, Card, StatTile } from "@/components/ui";
-import { BANK_TODAY } from "@/lib/store";
+import { Card, Seg, StatTile } from "@/components/ui";
+import { BANK_TODAY, COLLECTIONS, DISBURSEMENTS } from "@/lib/store";
 import { OPERATING_SUBS } from "@/lib/dims";
 import { hkdCompact, pct, variancePct } from "@/lib/format";
-import { ACTUAL_MONTHS, fyMonthLabel } from "@/lib/fy";
+import { ACTUAL_MONTHS, fyMonthLabel, monthsInPeriod, periodLabel, TODAY } from "@/lib/fy";
 import {
   ageBuckets,
-  alerts,
   arItems,
   bankTrend,
   concentration,
@@ -24,30 +24,138 @@ import {
 } from "@/lib/queries";
 import { CURRENT_FY, PRIOR_FY } from "@/lib/fy";
 import { agiPerFeeEarner, ratioSuite, runwayBySub } from "../lib/agency";
+import { chaseList, findings } from "@/lib/advisor";
 
-const YTD = Array.from({ length: ACTUAL_MONTHS }, (_, i) => i + 1);
+/** 星期一開始嘅本週/上週範圍（ISO date strings） */
+function weekRanges() {
+  const d = new Date(TODAY);
+  const dow = (d.getUTCDay() + 6) % 7; // Mon=0
+  const monThis = new Date(d.getTime() - dow * 86400000);
+  const monLast = new Date(monThis.getTime() - 7 * 86400000);
+  const iso = (x: Date) => x.toISOString().slice(0, 10);
+  return { thisStart: iso(monThis), lastStart: iso(monLast), lastEnd: iso(new Date(monThis.getTime() - 86400000)) };
+}
 
 export default function OverviewPage() {
+  const [mode, setMode] = useState<"month" | "quarter" | "ytd">("ytd");
+  const [month, setMonth] = useState(ACTUAL_MONTHS);
+  const months = monthsInPeriod(mode, month);
+  const plabel = periodLabel(mode, month);
+
   const bank = bankTrend().map((d) => ({ label: d.date.slice(5), total: d.total }));
   const npTrend = pnlTrend(-1, "NP").map((d) => ({ label: fyMonthLabel(d.month), ...d }));
-  const kpi = kpiAgi(-1, YTD);
+  const kpi = kpiAgi(-1, months);
   const conc = concentration();
-  const consolRows = pnlRows(-1, YTD, false);
+  const consolRows = pnlRows(-1, months, false);
   const rev = consolRows.find((r) => r.code === "TOTAL_REV")!;
   const gp = consolRows.find((r) => r.code === "GP")!;
   const np = consolRows.find((r) => r.code === "NP")!;
-  const alertList = alerts();
   const arB = ageBuckets(arItems(-1));
-  const ratios = ratioSuite(YTD);
-  const perFe = agiPerFeeEarner(YTD);
+  const ratios = ratioSuite(months);
+  const perFe = agiPerFeeEarner(months);
+
+  // ── 行動區數據 ──
+  const wk = weekRanges();
+  const sumRange = (rows: { paymentDate: string; amount: number }[], from: string, to?: string) =>
+    rows.filter((r) => r.paymentDate >= from && (!to || r.paymentDate <= to)).reduce((a, r) => a + r.amount, 0);
+  const inThis = sumRange(COLLECTIONS, wk.thisStart);
+  const outThis = sumRange(DISBURSEMENTS, wk.thisStart);
+  const inLast = sumRange(COLLECTIONS, wk.lastStart, wk.lastEnd);
+  const outLast = sumRange(DISBURSEMENTS, wk.lastStart, wk.lastEnd);
+  const chase = chaseList().filter((r) => r.overdue30 > 0);
+  const overdueTotal = chase.reduce((a, r) => a + r.overdue30, 0);
+  const finds = findings();
+  const urgent = finds.filter((f) => f.severity === "red");
 
   return (
     <div className="space-y-4">
       <div className="flex items-baseline justify-between flex-wrap gap-2">
-        <h1 className="text-lg font-semibold">集團總覽 · FY2026/27 YTD（4–7 月）</h1>
-        <Link href="/pnl" className="text-[12px] text-accent hover:underline">
-          查看完整 P&L →
-        </Link>
+        <h1 className="text-lg font-semibold">
+          集團總覽 <span className="text-[13px] text-ink3 font-normal">FY2026/27 · {plabel}</span>
+        </h1>
+        <div className="flex items-center gap-2">
+          <Seg
+            value={mode}
+            onChange={(v) => setMode(v)}
+            options={[
+              { value: "month" as const, label: "月" },
+              { value: "quarter" as const, label: "季" },
+              { value: "ytd" as const, label: "YTD" },
+            ]}
+          />
+          {mode !== "ytd" && (
+            <select
+              className="bg-surface border border-ringc rounded-lg px-2.5 py-1.5 text-[13px]"
+              aria-label="選擇月份"
+              value={month}
+              onChange={(e) => setMonth(Number(e.target.value))}
+            >
+              {Array.from({ length: ACTUAL_MONTHS }, (_, i) => i + 1).map((m) => (
+                <option key={m} value={m}>
+                  {fyMonthLabel(m)}
+                </option>
+              ))}
+            </select>
+          )}
+        </div>
+      </div>
+
+      {/* ── 今週行動 Action Zone ─────────────────────────────────────────── */}
+      <div className="grid lg:grid-cols-3 gap-3">
+        <div className="rounded-xl border border-ringc bg-surface px-4 py-3">
+          <div className="text-[11px] text-ink3 mb-1.5">本週收支（截至最新 sync）</div>
+          <div className="flex items-baseline gap-4 flex-wrap">
+            <div>
+              <span className="text-[11px] text-ink3">收款 </span>
+              <span className="text-lg font-semibold num text-deltagood">{hkdCompact(inThis)}</span>
+            </div>
+            <div>
+              <span className="text-[11px] text-ink3">出數 </span>
+              <span className="text-lg font-semibold num">{hkdCompact(outThis)}</span>
+            </div>
+            <div>
+              <span className="text-[11px] text-ink3">淨 </span>
+              <span className={`text-lg font-semibold num ${inThis - outThis >= 0 ? "text-deltagood" : "text-critical"}`}>
+                {inThis - outThis >= 0 ? "+" : "−"}
+                {hkdCompact(Math.abs(inThis - outThis))}
+              </span>
+            </div>
+          </div>
+          <div className="text-[11px] text-ink3 mt-1">
+            上週：收 {hkdCompact(inLast)} · 出 {hkdCompact(outLast)} ·{" "}
+            <Link href="/cashflow" className="text-accent hover:underline">
+              收數週報 →
+            </Link>
+          </div>
+        </div>
+
+        <div className={`rounded-xl border bg-surface px-4 py-3 ${overdueTotal > 500_000 ? "border-critical/40" : "border-ringc"}`}>
+          <div className="text-[11px] text-ink3 mb-1.5">被拖緊嘅錢（逾期 &gt;30 日）</div>
+          <div className={`text-lg font-semibold num ${overdueTotal > 0 ? "text-critical" : ""}`}>{hkdCompact(overdueTotal)}</div>
+          <div className="text-[11px] text-ink2 mt-1 truncate">
+            {chase.slice(0, 3).map((r) => r.entityName.split("（")[0]).join("、")}
+            {chase.length > 3 ? ` 等 ${chase.length} 個客` : ""}
+          </div>
+          <Link href="/advisor" className="text-[11px] text-accent hover:underline">
+            追數清單（可一鍵複製）→
+          </Link>
+        </div>
+
+        <div className={`rounded-xl border bg-surface px-4 py-3 ${urgent.length ? "border-critical/40" : "border-ringc"}`}>
+          <div className="text-[11px] text-ink3 mb-1.5">要處理嘅事（CFO 助手）</div>
+          {urgent.length === 0 ? (
+            <div className="text-[13px] text-deltagood font-medium">✓ 暫無紅色警示</div>
+          ) : (
+            urgent.slice(0, 2).map((f, i) => (
+              <div key={i} className="text-[12px] text-ink mb-0.5">
+                <span className="text-critical font-semibold">●</span> {f.headline}
+              </div>
+            ))
+          )}
+          <Link href="/advisor" className="text-[11px] text-accent hover:underline">
+            全部發現＋建議 →
+          </Link>
+        </div>
       </div>
 
       {/* group KPI tiles */}
@@ -58,19 +166,19 @@ export default function OverviewPage() {
           note="已對數 SuiteQL 銀行結餘（§10.4）"
         />
         <StatTile
-          label="YTD 收入"
+          label={`${plabel} 收入`}
           value={hkdCompact(rev.actual)}
           delta={variancePct(rev.actual, rev.budget)}
           deltaLabel="vs 預算"
         />
         <StatTile
-          label="YTD 毛利 GP"
+          label={`${plabel} 毛利 GP`}
           value={hkdCompact(gp.actual)}
           delta={variancePct(gp.actual, gp.ly)}
           deltaLabel="vs 去年"
         />
         <StatTile
-          label="YTD 純利"
+          label={`${plabel} 純利`}
           value={hkdCompact(np.actual)}
           delta={variancePct(np.actual, np.budget)}
           deltaLabel="vs 預算"
@@ -105,7 +213,7 @@ export default function OverviewPage() {
       </div>
 
       {/* per-company summary */}
-      <Card title="各公司當年表現（YTD）" subtitle="收入／毛利／純利，對預算及去年">
+      <Card title={`各公司表現（${plabel}）`} subtitle="收入／毛利／純利，對預算及去年">
         <div className="overflow-x-auto">
           <table className="report-table w-full text-[13px]">
             <thead>
@@ -120,7 +228,7 @@ export default function OverviewPage() {
             </thead>
             <tbody>
               {OPERATING_SUBS.map((s) => {
-                const rows = pnlRows(s.id, YTD, false);
+                const rows = pnlRows(s.id, months, false);
                 const r = rows.find((x) => x.code === "TOTAL_REV")!;
                 const g = rows.find((x) => x.code === "GP")!;
                 const n = rows.find((x) => x.code === "NP")!;
@@ -147,7 +255,7 @@ export default function OverviewPage() {
       </Card>
 
       <div className="grid lg:grid-cols-3 gap-4">
-        <Card title="Agency 指標（YTD）" subtitle="§6.2 — AGI 及效率指標">
+        <Card title={`Agency 指標（${plabel}）`} subtitle="§6.2 — AGI 及效率指標">
           <div className="space-y-3">
             <KpiLine label="AGI" value={hkdCompact(kpi.agi)} />
             <KpiLine label="AGI margin" value={pct(kpi.agiMargin)} />
@@ -175,18 +283,32 @@ export default function OverviewPage() {
             />
             <KpiLine label="DSO" value={`${dso(-1)} 日`} />
             <KpiLine
-              label="YTD 收入（合併）"
+              label={`${plabel} 收入（合併）`}
               value={hkdCompact(
-                sumFacts({ fy: CURRENT_FY, kind: "actual", subIds: [1, 2, 4, 5, 7, 8], months: YTD, groups: ["REV_SERVICE", "REV_TRAVEL", "REV_GOODS"] })
+                sumFacts({ fy: CURRENT_FY, kind: "actual", subIds: [1, 2, 4, 5, 7, 8], months, groups: ["REV_SERVICE", "REV_TRAVEL", "REV_GOODS"] })
               )}
             />
           </div>
         </Card>
 
-        <Card title="例外警示中心" subtitle="§7 規則（demo 數據觸發）">
-          {alertList.map((a, i) => (
-            <AlertRow key={i} severity={a.severity} title={a.title} detail={a.detail} />
-          ))}
+        <Card title="CFO 發現" subtitle="規則引擎（真數）— 完整建議喺 CFO 助手頁">
+          <div className="space-y-2">
+            {finds.slice(0, 5).map((f, i) => (
+              <div key={i} className="flex items-start gap-2 border-b border-grid pb-2 last:border-b-0 last:pb-0">
+                <span
+                  className={`mt-0.5 text-[10px] ${
+                    f.severity === "red" ? "text-critical" : f.severity === "amber" ? "text-warn" : "text-accent"
+                  }`}
+                >
+                  ●
+                </span>
+                <div className="min-w-0">
+                  <div className="text-[12px] text-ink font-medium">{f.headline}</div>
+                  <div className="text-[11px] text-ink3 truncate">{f.action}</div>
+                </div>
+              </div>
+            ))}
+          </div>
         </Card>
       </div>
 
@@ -194,7 +316,7 @@ export default function OverviewPage() {
       <div className="space-y-2">
         <h2 className="text-[13px] font-semibold text-ink">
           Agency 三大比率{" "}
-          <span className="text-[11px] text-ink3 font-normal">Agency ratio suite · YTD（4–7 月）</span>
+          <span className="text-[11px] text-ink3 font-normal">Agency ratio suite</span>
         </h2>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           <StatTile

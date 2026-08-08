@@ -157,6 +157,23 @@ export async function GET(req: Request) {
       }))
     );
 
+    // disbursements: vendor payments (last 60 days, upsert)
+    const disb = await sqAll(
+      token,
+      `SELECT p.id, p.tranid, TO_CHAR(p.trandate,'MM/DD/YYYY') AS pdate, tl.subsidiary AS sub, ABS(NVL(p.foreigntotal,0)) * NVL(p.exchangerate,1) AS amt, COALESCE(v.companyname, v.entityid) AS vend FROM transaction p JOIN transactionline tl ON tl.transaction = p.id AND tl.mainline = 'T' LEFT JOIN vendor v ON v.id = p.entity WHERE p.type = 'VendPymt' AND p.trandate >= TO_DATE('${colSince}','YYYY-MM-DD')`
+    );
+    await ingest(
+      "fact_disbursements",
+      disb.map((r) => ({
+        payment_id: Number(r.id),
+        payment_date: mdy(r.pdate),
+        subsidiary_id: Number(r.sub),
+        vendor_name: r.vend ?? null,
+        tranid: r.tranid,
+        amount: Math.round(Number(r.amt) * 100) / 100,
+      }))
+    );
+
     const bank = await sqAll(
       token,
       `SELECT tl.subsidiary AS sub, tal.account AS acct, SUM(NVL(tal.debit,0) - NVL(tal.credit,0)) AS bal FROM transactionaccountingline tal JOIN transaction t ON t.id = tal.transaction JOIN transactionline tl ON tl.transaction = tal.transaction AND tl.id = tal.transactionline JOIN account a ON a.id = tal.account WHERE tal.posting = 'T' AND a.accttype = 'Bank' GROUP BY tl.subsidiary, tal.account`

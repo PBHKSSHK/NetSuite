@@ -122,20 +122,19 @@ export function findings(): Finding[] {
   const liq = liquidity();
   const chase = chaseList();
 
-  // 1. 追數
+  // 1. AR Alert（公司規則 2026-08-09 確認：invoice 過 due date 30 日未收即出 alert）
   const od60 = chase.reduce((a, r) => a + r.overdue60, 0);
   const od30 = chase.reduce((a, r) => a + r.overdue30, 0);
-  if (od60 > 200_000) {
-    const top = chase.filter((r) => r.overdue60 > 0).slice(0, 3).map((r) => r.entityName).join("、");
+  const alertClients = chase.filter((r) => r.overdue30 > 0);
+  if (alertClients.length > 0) {
+    const top = alertClients.slice(0, 3).map((r) => r.entityName).join("、");
     out.push({
-      area: "追數",
+      area: "AR Alert",
       severity: "red",
-      headline: `逾期 60 日以上應收 ${fmtM(od60)}`,
-      detail: `最大欠款：${top}。逾期 30 日以上合共 ${fmtM(od30)}。`,
+      headline: `${alertClients.length} 個客戶觸發 AR Alert（due date 後 30 日未收），合共 ${fmtM(od30)}`,
+      detail: `最大欠款：${top}${od60 > 0 ? `。其中逾期 60 日以上 ${fmtM(od60)}` : ""}。`,
       action: "用下面「追數清單」逐個跟進；逾期 >90 日兼仲有新工開緊嘅客，考慮暫停服務先收數。",
     });
-  } else if (od30 > 100_000) {
-    out.push({ area: "追數", severity: "amber", headline: `逾期 30 日以上應收 ${fmtM(od30)}`, detail: "整體受控，但要保持每週跟進節奏。", action: "每週一用追數清單過一次數。" });
   }
 
   // 2. 警戒線 / runway / 借貸

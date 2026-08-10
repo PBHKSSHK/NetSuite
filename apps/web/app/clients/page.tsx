@@ -17,6 +17,7 @@ import {
 import { ChartTooltip } from "@/components/charts";
 import { Card, ExportButton, StatTile, exportCsv } from "@/components/ui";
 import { paymentBehaviour, pitchStats } from "@/lib/agency";
+import { chaseList } from "@/lib/advisor";
 import { subsidiaryById } from "@/lib/dims";
 import { hkd, hkdCompact } from "@/lib/format";
 import { ACTUAL_MONTHS, CURRENT_FY_START_YEAR, fyMonthFull, fyMonthLabel } from "@/lib/fy";
@@ -319,12 +320,9 @@ export default function ClientsPage() {
   const clientRetentionPct = priorActive.length ? (100 * (priorActive.length - lost.length)) / priorActive.length : 0;
   const revenueRetentionPct = priorTotal ? (100 * retainedPrior) / priorTotal : 0;
 
-  // 4) 信用風險：外部客有未收 A/R 嘅
-  const creditRows = external
-    .map((a) => ({ ...a, arOpen: Math.round(AR_BY_CUSTOMER.get(a.customerId) ?? 0) }))
-    .filter((r) => r.arOpen > 0)
-    .map((r) => ({ ...r, utilPct: r.creditLimit ? (100 * r.arOpen) / r.creditLimit : null }))
-    .sort((x, y) => (y.utilPct ?? -1) - (x.utilPct ?? -1) || y.arOpen - x.arOpen);
+  // 4) AR Alert：due date 後 30 日未收（公司規則，2026-08-09 確認；唔設信用額度）
+  const arAlertRows = chaseList();
+  const alertCount = arAlertRows.filter((r) => r.overdue30 > 0).length;
 
   // 5) Pitch（demo）
   const pitch = pitchStats();
@@ -339,11 +337,11 @@ export default function ClientsPage() {
     <div className="space-y-4">
       <div>
         <h1 className="text-lg font-semibold">客戶 Clients</h1>
-        <p className="text-[12px] text-ink3">客戶收入・留存・信用風險・Pitch 效益 · FY2026/27 YTD（4–7 月）· HKD</p>
+        <p className="text-[12px] text-ink3">客戶收入・留存・AR Alert・Pitch 效益 · FY2026/27 YTD（4–7 月）· HKD</p>
       </div>
 
       <div className="text-[11px] text-ink2 bg-warn/10 border border-warn/30 rounded-lg px-3 py-2">
-        客戶標記（關聯/retainer/行業/信用額度）為系統估算，未經確認——可經客戶資料確認表修訂。
+        客戶標記（關聯/retainer/行業）已由公司確認（2026-08-09）；需要修改可再交確認表或經管理員更新。
       </div>
 
       {/* ── 1. 客戶收入榜 ───────────────────────────────────────────────── */}
@@ -508,44 +506,53 @@ export default function ClientsPage() {
         </Card>
       </div>
 
-      {/* ── 4. 信用風險 exposure ────────────────────────────────────────── */}
+      {/* ── 4. AR Alert（due date 後 30 日未收）─────────────────────────── */}
       <Card
-        title="信用風險 Exposure"
-        subtitle="外部客未收 A/R vs 信用額度 · 使用率 >90% 紅、>75% 黃 · 額度為系統估算"
+        title="AR Alert"
+        subtitle="公司規則：invoice 過咗 due date 30 日仍未收 → 出 alert（唔設信用額度）"
       >
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-3 max-w-xl">
+          <MiniTile label="觸發 AR Alert 客戶" value={`${alertCount} 個`} note="逾期 >30 日" bad={alertCount > 0} />
+          <MiniTile
+            label="Alert 金額合計"
+            value={hkdCompact(arAlertRows.reduce((a, r) => a + r.overdue30, 0))}
+            note="due date 後 30 日仍未收"
+            bad={alertCount > 0}
+          />
+        </div>
         <div className="overflow-x-auto">
           <table className="report-table w-full text-[13px]">
             <thead>
               <tr>
                 <th className="text-left">客戶</th>
-                <th className="num">未收 A/R</th>
-                <th className="num">信用額度</th>
-                <th className="num">使用率 %</th>
+                <th className="num">未收總額</th>
+                <th className="num">逾期 &gt;30 日</th>
+                <th className="num">最耐（日）</th>
+                <th className="text-left">狀態</th>
               </tr>
             </thead>
             <tbody>
-              {creditRows.map((r) => {
-                const util = r.utilPct;
-                const utilCls =
-                  util == null ? "text-ink3" : util > 90 ? "text-critical font-semibold" : util > 75 ? "text-warn font-medium" : "";
-                return (
-                  <tr key={r.customerId}>
-                    <td className="text-left">
-                      {r.name}
-                      <span className="text-[11px] text-ink3 ml-1.5">{r.subs.map(subShort).join(" / ")}</span>
-                    </td>
-                    <td className="num">{hkd(r.arOpen)}</td>
-                    <td className="num">
-                      {r.creditLimit != null ? hkd(r.creditLimit) : <span className="text-ink3">未設</span>}
-                    </td>
-                    <td className={`num ${utilCls}`}>{util == null ? "—" : `${util.toFixed(1)}%`}</td>
-                  </tr>
-                );
-              })}
+              {arAlertRows.slice(0, 20).map((r) => (
+                <tr key={r.entityName}>
+                  <td className="text-left">{r.entityName}</td>
+                  <td className="num">{hkd(r.totalOpen)}</td>
+                  <td className={`num ${r.overdue30 > 0 ? "text-critical font-semibold" : "text-ink3"}`}>
+                    {r.overdue30 > 0 ? hkd(r.overdue30) : "—"}
+                  </td>
+                  <td className={`num ${r.oldestDays > 90 ? "text-critical" : ""}`}>{r.oldestDays}</td>
+                  <td className="text-left">
+                    {r.overdue30 > 0 ? (
+                      <span className="text-[11px] text-critical font-medium">⚠ AR Alert</span>
+                    ) : (
+                      <span className="text-[11px] text-ink3">逾期未滿 30 日</span>
+                    )}
+                  </td>
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>
-        <SourceNote>fact_ar_open（按 customer 合計）× dim_client_info.credit_limit（估算，待確認）</SourceNote>
+        <SourceNote>fact_ar_open（每日 sync）· 逐張 invoice 明細＋一鍵複製追數 report 喺 CFO 助手頁</SourceNote>
       </Card>
 
       {/* ── 5. Pitch 勝率（demo）────────────────────────────────────────── */}

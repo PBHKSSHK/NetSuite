@@ -59,6 +59,8 @@ export interface OpenItem {
   tranDate: string; // ISO
   dueDate: string; // ISO
   amountOpen: number;
+  /** 關聯公司（集團內互欠）——AR 追數清單要剔走，另行內部對數 */
+  isRelated?: boolean;
 }
 
 export interface BankPoint {

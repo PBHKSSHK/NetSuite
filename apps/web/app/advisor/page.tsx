@@ -1,13 +1,14 @@
 "use client";
 
 // CFO 助手 — 規則引擎 findings + 追數清單 + 流動性/借貸判斷（真數）。
-// 第二層「AI CFO 週評」由 Claude API 生成（等 API key 接通後啟用）。
+// 第二層「AI CFO 週評」：每週五 pg_cron 生成存入 cfo_notes，呢度顯示最新一份。
 
 import { useState } from "react";
 import { Card } from "@/components/ui";
-import { chaseList, chaseReportText, findings, liquidity } from "@/lib/advisor";
+import { chaseList, chaseReportText, findings, intercoOverdue, liquidity } from "@/lib/advisor";
 import { subsidiaryById } from "@/lib/dims";
 import { hkd, hkdCompact } from "@/lib/format";
+import { CFO_NOTES } from "@/lib/store";
 
 const SEV_STYLE: Record<string, { badge: string; label: string }> = {
   red: { badge: "bg-critical/10 text-critical border-critical/40", label: "要處理" },
@@ -19,6 +20,8 @@ export default function AdvisorPage() {
   const list = findings();
   const chase = chaseList().filter((r) => r.overdue30 > 0);
   const liq = liquidity();
+  const interco = intercoOverdue();
+  const memo = CFO_NOTES.length > 0 ? CFO_NOTES[CFO_NOTES.length - 1] : null;
   const [copied, setCopied] = useState(false);
   const [open, setOpen] = useState<string | null>(null);
 
@@ -112,6 +115,12 @@ export default function AdvisorPage() {
         <p className="text-[11px] text-ink3 mt-2">
           來源：NetSuite A/R（每日 sync）。注意：收款批量遲入 NetSuite，個別「逾期」可能其實已收——會計當日入帳後自動修正。
         </p>
+        {interco.totalOpen > 0 && (
+          <p className="text-[11px] text-ink3 mt-1">
+            另：集團內互欠（關聯公司，唔入追數清單）未收合計 {hkd(interco.totalOpen)}
+            {interco.overdue30 > 0 && <>，其中逾期 &gt;30 日 {hkd(interco.overdue30)}</>}——內部對數／調配處理。
+          </p>
+        )}
       </Card>
 
       {/* 流動性 */}
@@ -155,12 +164,26 @@ export default function AdvisorPage() {
         <p className="text-[11px] text-ink3 mt-2">淨流以 P&L 淨額做 proxy（未扣 CapEx／貸款還本）；判斷借唔借貸請同時參考 findings 嘅集團層面分析。</p>
       </Card>
 
-      {/* AI 週評 placeholder */}
-      <Card title="AI CFO 週評" subtitle="第二層 — Claude 每週將上面嘅發現寫成一段完整 CFO 評語（優先次序 + 連貫判斷）">
-        <p className="text-[13px] text-ink2">
-          呢部分等一個 Anthropic API key 就可以啟用：每週一早上自動生成，內容只會引用規則引擎已核實嘅數字（唔會作數），
-          並存底供翻查。設定方法：提供 API key 俾管理員放入 Supabase secrets。
-        </p>
+      {/* AI 週評（cfo_notes — 每週五 19:00 pg_cron 生成） */}
+      <Card
+        title="AI CFO 週評"
+        subtitle={
+          memo
+            ? `${memo.weekOf} 週 · 每週五自動生成 · 只引用已核實數字`
+            : "每週五 19:00 自動生成 · 只引用已核實數字"
+        }
+      >
+        {memo ? (
+          <>
+            <div className="text-[13px] text-ink whitespace-pre-wrap leading-relaxed">{memo.content}</div>
+            <p className="text-[11px] text-ink3 mt-3">
+              生成時間 {memo.generatedAt.slice(0, 16).replace("T", " ")} UTC · 模型 {memo.model} ·
+              數據源：銀行結餘／收款／出數／AR（外部客戶）——集團內互欠另行列示，唔入追數建議。
+            </p>
+          </>
+        ) : (
+          <p className="text-[13px] text-ink2">未有週評紀錄——第一份會喺星期五 19:00 自動生成。</p>
+        )}
       </Card>
     </div>
   );

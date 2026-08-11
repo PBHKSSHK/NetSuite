@@ -75,6 +75,15 @@ export const DISBURSEMENTS: {
   amount: number;
 }[] = [];
 
+/** AI CFO 週評（cfo_notes — 每週五 pg_cron 生成，week_of 升序；
+ *  RLS 限 owner/accountant，其他 role 讀到空array係正常） */
+export const CFO_NOTES: {
+  weekOf: string;
+  generatedAt: string;
+  model: string;
+  content: string;
+}[] = [];
+
 // ── Supabase row shapes ──────────────────────────────────────────────────────
 
 interface PeriodRow {
@@ -170,6 +179,13 @@ interface ClientRevenueRow {
   amount: number | string;
 }
 
+interface CfoNoteRow {
+  week_of: string;
+  generated_at: string;
+  model: string;
+  content: string;
+}
+
 // ── fetch helpers ────────────────────────────────────────────────────────────
 
 const PAGE_SIZE = 1000;
@@ -256,6 +272,7 @@ async function doHydrate(): Promise<void> {
     clientInfoRows,
     clientRevenueRows,
     disbursementRows,
+    cfoNoteRows,
   ] = await Promise.all([
     fetchAll<PeriodRow>("dim_period", "id, fy_label, fy_month_no, start_date", ["id"]),
     fetchAll<ReportGroupRow>("report_group", "id, code, label, statement", ["id"]),
@@ -302,6 +319,7 @@ async function doHydrate(): Promise<void> {
       "payment_id, payment_date, subsidiary_id, vendor_name, amount",
       ["payment_date", "payment_id"]
     ),
+    fetchAll<CfoNoteRow>("cfo_notes", "week_of, generated_at, model, content", ["week_of"]),
   ]);
 
   // lookup maps
@@ -353,6 +371,7 @@ async function doHydrate(): Promise<void> {
 
   // ── OpenItem（AR：entityName 用 dim_customer；AP 冇 vendor dim 表，
   //    直接用 "Vendor #" + vendor_id，簡單直接）
+  const relatedIds = new Set(clientInfoRows.filter((c) => c.is_related).map((c) => c.customer_id));
   const arItems: OpenItem[] = arRows.map((r) => ({
     txnId: r.tranid ?? String(r.txn_id),
     subsidiaryId: r.subsidiary_id,
@@ -362,6 +381,7 @@ async function doHydrate(): Promise<void> {
     tranDate: r.trandate,
     dueDate: r.duedate ?? r.trandate,
     amountOpen: num(r.amount_open),
+    isRelated: r.customer_id != null && relatedIds.has(r.customer_id),
   }));
   const apItems: OpenItem[] = apRows.map((r) => ({
     txnId: r.tranid ?? String(r.txn_id),
@@ -482,6 +502,11 @@ async function doHydrate(): Promise<void> {
       vendorName: d.vendor_name,
       amount: num(d.amount),
     });
+  }
+
+  CFO_NOTES.length = 0;
+  for (const n of cfoNoteRows) {
+    CFO_NOTES.push({ weekOf: n.week_of, generatedAt: n.generated_at, model: n.model, content: n.content });
   }
 
   DATA_AS_OF.value = latestAsOf ? `${latestAsOf} sync` : "未有 sync 紀錄";

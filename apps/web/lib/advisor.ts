@@ -34,10 +34,12 @@ export interface ChaseRow {
   invoices: { txnId: string; subsidiaryId: number; dueDate: string; days: number; amount: number }[];
 }
 
-/** 追數清單：按客戶合併逾期應收，逾期最耐排先。 */
+/** 追數清單：按客戶合併逾期應收，逾期最耐排先。
+ *  只計外部客戶——關聯公司（集團內互欠）唔係追數對象，用 intercoOverdue() 另行睇。 */
 export function chaseList(): ChaseRow[] {
   const byClient = new Map<string, ChaseRow>();
   for (const it of AR_OPEN) {
+    if (it.isRelated) continue;
     const days = daysOverdue(it.dueDate);
     if (days <= 0) continue;
     let row = byClient.get(it.entityName);
@@ -54,6 +56,18 @@ export function chaseList(): ChaseRow[] {
   const rows = [...byClient.values()];
   for (const r of rows) r.invoices.sort((a, b) => b.days - a.days);
   return rows.sort((a, b) => b.overdue60 - a.overdue60 || b.overdue30 - a.overdue30 || b.totalOpen - a.totalOpen);
+}
+
+/** 集團內互欠（關聯公司 AR）合計——內部對數用，唔入追數清單 */
+export function intercoOverdue(): { totalOpen: number; overdue30: number } {
+  let totalOpen = 0;
+  let overdue30 = 0;
+  for (const it of AR_OPEN) {
+    if (!it.isRelated) continue;
+    totalOpen += it.amountOpen;
+    if (daysOverdue(it.dueDate) > 30) overdue30 += it.amountOpen;
+  }
+  return { totalOpen, overdue30 };
 }
 
 /** 追數 WhatsApp/email 文字（copy 用） */

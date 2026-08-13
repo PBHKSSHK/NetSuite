@@ -1,6 +1,6 @@
 # Dashboard 功能總覽 + 真數接通時間表
 
-**Live site：** https://pbhk-group-dashboard-pbhk.vercel.app
+**Live site：** https://net-suite-pbhk.vercel.app
 **Repo branch：** [`claude/markdown-dashboard-vercel-xxzmt3`](https://github.com/PBHKSSHK/NetSuite/tree/claude/markdown-dashboard-vercel-xxzmt3)
 
 ## 「駁通後幾時有真數」三個級別
@@ -13,7 +13,7 @@
 
 ## 頁面功能一覽
 
-### [集團總覽 /](https://pbhk-group-dashboard-pbhk.vercel.app/)
+### [集團總覽 /](https://net-suite-pbhk.vercel.app/)
 | 功能 | 級別 |
 |------|------|
 | 每公司銀行結餘 + 警戒線 | 🟢（§10.4 已對數） |
@@ -24,25 +24,25 @@
 | 客戶集中度 | 🟢 |
 | 例外警示中心 | 🟢 |
 
-### [損益表 /pnl](https://pbhk-group-dashboard-pbhk.vercel.app/pnl)
+### [損益表 /pnl](https://net-suite-pbhk.vercel.app/pnl)
 | 功能 | 級別 |
 |------|------|
 | Report group 行項 P&L（實際/預算/差異/去年）+ AGI/EBITDA | 🟢（mapping 會計確認後；P&L 對數已證一仙不差） |
 | 12 個月 trend | 🟢 |
 | 分攤後 pro-forma toggle | 🟡（分攤 rules 已解通見 `allocation-rules.md`；要每月 headcount + 現行 GP%） |
 
-### [資產負債表 /balance-sheet](https://pbhk-group-dashboard-pbhk.vercel.app/balance-sheet)
+### [資產負債表 /balance-sheet](https://net-suite-pbhk.vercel.app/balance-sheet)
 | 功能 | 級別 |
 |------|------|
 | As-of BS、銀行同源、A/R 對數檢查、合併含 Elimination | 🟢 |
 
-### [預算 /budget](https://pbhk-group-dashboard-pbhk.vercel.app/budget)
+### [預算 /budget](https://net-suite-pbhk.vercel.app/budget)
 | 功能 | 級別 |
 |------|------|
 | BvA 逐月、達成率、全年 outlook | 🟡（預算檔要 import——NetSuite 內冇 budget 數據） |
 | **收入覆蓋率 Backlog Coverage**（新） | 🟡（要 retainer／已簽 SOW 清單，之後每月維護） |
 
-### [現金流 /cashflow](https://pbhk-group-dashboard-pbhk.vercel.app/cashflow)
+### [現金流 /cashflow](https://net-suite-pbhk.vercel.app/cashflow)
 | 功能 | 級別 |
 |------|------|
 | 月度實際、每週客戶收支、13 週 rolling forecast | 🟢 |
@@ -52,7 +52,7 @@
 | **Intercompany 結欠 aging**（新） | 🟢 |
 | **供應商集中度**（新) | 🟢 |
 
-### [成本中心 /cost-center](https://pbhk-group-dashboard-pbhk.vercel.app/cost-center)
+### [成本中心 /cost-center](https://net-suite-pbhk.vercel.app/cost-center)
 | 功能 | 級別 |
 |------|------|
 | Department 成本矩陣 + Untagged bucket + tagging hygiene | 🟢 |

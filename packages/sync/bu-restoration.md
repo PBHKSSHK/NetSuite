@@ -5,7 +5,11 @@
 app（`apps/web/lib/bu.ts`）按 reference tables 即時推算，所以改 `bu_mapping` /
 `ic_entity_map` 唔使重跑 ETL。
 
-## 首次全量（已完成 2026-09-16：2021-04 → 2026-09）
+## 首次全量（2026-09-16 進行中）
+
+載入狀態：2021-04 → 2023-04（2023-04 缺 Query B）、2024-01 → 2026-03（2026-03 缺 Query B）。
+**待補**：2023-05 → 2023-12、2026-04 → 2026-09、2023-04 / 2026-03 嘅 Query B（NetSuite MCP 登入
+過期中斷；重新授權後照下面 query 逐月補跑，upsert 冪等）。
 
 經 NetSuite MCP 逐月執行下列 query（每月 2 條，避免全表子查詢 timeout），
 再 `INSERT … ON CONFLICT DO UPDATE` 入 Supabase。

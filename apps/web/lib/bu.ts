@@ -1,0 +1,757 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// BU P&L / Cashflow 還原引擎（Blueprint v0.1 §2）。
+//  1. 每條 fact_bu_pl 行 → ic_flag（§2.2 步驟 2）+ bu_code（bu_mapping）+ mgmt_line
+//  2. Layer 1：EXTERNAL 行按 BU 歸集（pass-through 自動抵銷）
+//  3. Layer 2：SHARED pool 按 allocation key 分攤落 4 個 BU
+//  4. Bridge：法定（per company）→ 剔 IC → BU 純業務 → 分攤後
+//  5. BU cash contribution（§2.3 A）
+// 所有規則來自 Supabase reference tables（bu-store.ts），唔 hard-code。
+// ─────────────────────────────────────────────────────────────────────────────
+
+import {
+  ACCOUNTS,
+  ACCOUNT_OVERRIDE,
+  ALLOC_RULES,
+  BU_CASH,
+  BU_MAPPING,
+  BU_PL,
+  DEPT_NAMES,
+  HEADCOUNT,
+  IC_ACCOUNTS,
+  IC_BALANCES,
+  IC_ENTITIES,
+} from "./bu-store";
+
+// ── BU / 行次定義 ────────────────────────────────────────────────────────────
+
+export type BuCode = "EPR" | "PROD" | "JM" | "CLS" | "SHARED" | "OTHER";
+
+export const BU_LIST: { code: BuCode; label: string; en: string }[] = [
+  { code: "EPR", label: "ePR", en: "ePR" },
+  { code: "PROD", label: "Production", en: "Production" },
+  { code: "JM", label: "JM", en: "Jervois M" },
+  { code: "CLS", label: "CLS", en: "CLS Garage" },
+  { code: "SHARED", label: "PB 平台（待分攤）", en: "PB-Platform / Shared" },
+  { code: "OTHER", label: "其他", en: "Other" },
+];
+export const CORE_BUS: BuCode[] = ["EPR", "PROD", "JM", "CLS"];
+export const BU_ORDER: BuCode[] = ["EPR", "PROD", "JM", "CLS", "SHARED", "OTHER"];
+
+export function buLabel(code: string): string {
+  return BU_LIST.find((b) => b.code === code)?.label ?? code;
+}
+
+export type IcFlag = "EXTERNAL" | "IC_MGMT_FEE" | "IC_INVOICE" | "IC_BILL" | "IC_JOURNAL_OTHER";
+export const IC_FLAG_LABEL: Record<IcFlag, string> = {
+  EXTERNAL: "外部",
+  IC_MGMT_FEE: "IC management fee",
+  IC_INVOICE: "IC 借名開單（invoice）",
+  IC_BILL: "IC recharge（vendor bill）",
+  IC_JOURNAL_OTHER: "IC journal（租金/器材/年結）",
+};
+
+export type MgmtLine =
+  | "REVENUE"
+  | "DIRECT_COST"
+  | "STAFF"
+  | "RENT"
+  | "MARKETING"
+  | "ADMIN"
+  | "DEPRECIATION"
+  | "OTHER_INCOME"
+  | "FINANCE"
+  | "OTHER_EXPENSE"
+  | "TAX"
+  | "IC_MGMT_FEE";
+
+export const MGMT_LINE_LABEL: Record<MgmtLine, string> = {
+  REVENUE: "收入 Revenue",
+  DIRECT_COST: "直接成本 Direct cost",
+  STAFF: "人工 Staff",
+  RENT: "租金及物業 Rent",
+  MARKETING: "市場推廣 Marketing",
+  ADMIN: "行政及其他 Admin & other",
+  DEPRECIATION: "折舊 Depreciation",
+  OTHER_INCOME: "其他收入 Other income",
+  FINANCE: "財務費用 Finance",
+  OTHER_EXPENSE: "其他支出 / 匯兌 Other",
+  TAX: "稅項 Tax",
+  IC_MGMT_FEE: "IC management fee（法定帳）",
+};
+
+const OPEX_LINES: MgmtLine[] = ["STAFF", "RENT", "MARKETING", "ADMIN"];
+
+// ── 期間 ─────────────────────────────────────────────────────────────────────
+
+/** 'YYYY-MM' → 財年（4 月起）label + FY 月份（1 = 4 月） */
+export function fyOf(ym: string): { fy: string; fm: number; startYear: number } {
+  const y = Number(ym.slice(0, 4));
+  const m = Number(ym.slice(5, 7));
+  const startYear = m >= 4 ? y : y - 1;
+  return { fy: `FY${startYear}/${String(startYear + 1).slice(2)}`, fm: m >= 4 ? m - 3 : m + 9, startYear };
+}
+
+export function ymOf(fy: string, fm: number): string {
+  const startYear = Number(fy.slice(2, 6));
+  const m0 = 3 + (fm - 1);
+  const year = startYear + Math.floor(m0 / 12);
+  const month = (m0 % 12) + 1;
+  return `${year}-${String(month).padStart(2, "0")}`;
+}
+
+export function priorFy(fy: string): string {
+  const s = Number(fy.slice(2, 6)) - 1;
+  return `FY${s}/${String(s + 1).slice(2)}`;
+}
+
+export const FM_LABEL = ["4月", "5月", "6月", "7月", "8月", "9月", "10月", "11月", "12月", "1月", "2月", "3月"];
+
+export interface Period {
+  fy: string;
+  months: number[]; // FY months 1–12
+}
+
+// ── 行分類 ───────────────────────────────────────────────────────────────────
+
+export interface Line {
+  ym: string;
+  fy: string;
+  fm: number;
+  sub: number;
+  dept: number;
+  acct: number;
+  ttype: string;
+  icFlag: IcFlag;
+  icEntity: number;
+  /** 對手方 subsidiary（IC 行）*/
+  counterparty: number | null;
+  /** related-party（Go Asia / Jervois T / X）——保留為外部但可標示 */
+  related: boolean;
+  bu: BuCode;
+  mgmtLine: MgmtLine;
+  /** credit − debit：收入正、成本負（HKD） */
+  amount: number;
+  lines: number;
+}
+
+function buFor(sub: number, dept: number, ym: string): BuCode {
+  const date = `${ym}-15`;
+  let fallback: BuCode | null = null;
+  for (const m of BU_MAPPING) {
+    if (m.subsidiaryId !== sub) continue;
+    if (m.effectiveFrom > date) continue;
+    if (m.effectiveTo && m.effectiveTo < date) continue;
+    if (m.departmentId === dept) return m.buCode as BuCode;
+    if (m.departmentId == null && !fallback) fallback = m.buCode as BuCode;
+  }
+  return fallback ?? "OTHER";
+}
+
+const RG_TO_LINE: Record<string, MgmtLine> = {
+  REV_SERVICE: "REVENUE",
+  REV_TRAVEL: "REVENUE",
+  REV_GOODS: "REVENUE",
+  COS_SERVICES: "DIRECT_COST",
+  COS_GOODS: "DIRECT_COST",
+  OPEX_STAFF: "STAFF",
+  OPEX_RENT: "RENT",
+  OPEX_MARKETING: "MARKETING",
+  OPEX_ADMIN: "ADMIN",
+  OPEX_IT: "ADMIN",
+  OPEX_OTHER: "ADMIN",
+  OPEX_DEPRECIATION: "DEPRECIATION",
+  OTHER_INCOME: "OTHER_INCOME",
+  ASSOC_INCOME: "OTHER_INCOME",
+};
+
+export function mgmtLineFor(acct: number): MgmtLine {
+  const ic = IC_ACCOUNTS.get(acct);
+  if (ic?.icType === "MGMT_FEE") return "IC_MGMT_FEE";
+  const override = ACCOUNT_OVERRIDE.get(acct);
+  if (override) return override as MgmtLine;
+  const a = ACCOUNTS.get(acct);
+  const no = a?.acctnumber ?? "";
+  if (no.startsWith("93")) return "TAX";
+  if (no.startsWith("85")) return "FINANCE";
+  if (no.startsWith("83")) return "OTHER_EXPENSE";
+  if (a?.reportGroupCode && RG_TO_LINE[a.reportGroupCode]) return RG_TO_LINE[a.reportGroupCode];
+  switch (a?.accttype) {
+    case "Income":
+      return "REVENUE";
+    case "COGS":
+      return "DIRECT_COST";
+    case "OthIncome":
+      return "OTHER_INCOME";
+    case "OthExpense":
+      return "OTHER_EXPENSE";
+    default:
+      return "ADMIN";
+  }
+}
+
+function classify(row: (typeof BU_PL)[number]): { icFlag: IcFlag; counterparty: number | null; related: boolean } {
+  const ic = IC_ACCOUNTS.get(row.accountId);
+  if (ic?.icType === "MGMT_FEE") return { icFlag: "IC_MGMT_FEE", counterparty: null, related: false };
+  const ent = row.icEntityId ? IC_ENTITIES.get(row.icEntityId) : undefined;
+  if (ent) {
+    const isInv = row.txnType === "CustInvc" || row.txnType === "CustCred";
+    const isBill = row.txnType === "VendBill" || row.txnType === "VendCred";
+    if (ent.relation === "group") {
+      if (isInv) return { icFlag: "IC_INVOICE", counterparty: ent.counterpartySubsidiaryId, related: false };
+      if (isBill) return { icFlag: "IC_BILL", counterparty: ent.counterpartySubsidiaryId, related: false };
+    } else {
+      return { icFlag: "EXTERNAL", counterparty: null, related: true };
+    }
+  }
+  if (row.txnType === "Journal" && row.icJournal) return { icFlag: "IC_JOURNAL_OTHER", counterparty: null, related: false };
+  return { icFlag: "EXTERNAL", counterparty: null, related: false };
+}
+
+let cache: { key: number; lines: Line[] } | null = null;
+
+export function allLines(): Line[] {
+  const key = BU_PL.length * 31 + BU_MAPPING.length;
+  if (cache && cache.key === key) return cache.lines;
+  const lines: Line[] = BU_PL.map((r) => {
+    const { fy, fm } = fyOf(r.ym);
+    const c = classify(r);
+    return {
+      ym: r.ym,
+      fy,
+      fm,
+      sub: r.subsidiaryId,
+      dept: r.departmentId,
+      acct: r.accountId,
+      ttype: r.txnType,
+      icFlag: c.icFlag,
+      icEntity: r.icEntityId,
+      counterparty: c.counterparty,
+      related: c.related,
+      bu: buFor(r.subsidiaryId, r.departmentId, r.ym),
+      mgmtLine: mgmtLineFor(r.accountId),
+      amount: r.credit - r.debit,
+      lines: r.lines,
+    };
+  });
+  cache = { key, lines };
+  return lines;
+}
+
+export function availableFys(): string[] {
+  const set = new Set<string>();
+  for (const r of BU_PL) set.add(fyOf(r.ym).fy);
+  return [...set].sort();
+}
+
+/** 該財年最後一個有數據的 FY 月份 */
+export function lastMonthWithData(fy: string): number {
+  let max = 0;
+  for (const r of BU_PL) {
+    const f = fyOf(r.ym);
+    if (f.fy === fy && f.fm > max) max = f.fm;
+  }
+  return max || 12;
+}
+
+export function linesIn(p: Period, extra?: (l: Line) => boolean): Line[] {
+  const ms = new Set(p.months);
+  return allLines().filter((l) => l.fy === p.fy && ms.has(l.fm) && (!extra || extra(l)));
+}
+
+export function periodLabelOf(p: Period): string {
+  if (p.months.length === 12) return `${p.fy} 全年`;
+  if (p.months.length === 1) return `${p.fy} ${FM_LABEL[p.months[0] - 1]}`;
+  return `${p.fy} ${FM_LABEL[p.months[0] - 1]}–${FM_LABEL[p.months[p.months.length - 1] - 1]}`;
+}
+
+// ── P&L 矩陣 ─────────────────────────────────────────────────────────────────
+
+export interface PlColumn {
+  lines: Record<MgmtLine, number>;
+  allocation: number; // Layer 2 分攤（負 = 承擔成本）
+  revenue: number;
+  directCost: number;
+  gp: number;
+  opex: number;
+  ebitda: number; // 純業務 EBITDA（Layer 1）
+  ebitdaAlloc: number; // 分攤後
+  np: number;
+  npAlloc: number;
+}
+
+function emptyCol(): PlColumn {
+  const lines = Object.fromEntries(Object.keys(MGMT_LINE_LABEL).map((k) => [k, 0])) as Record<MgmtLine, number>;
+  return { lines, allocation: 0, revenue: 0, directCost: 0, gp: 0, opex: 0, ebitda: 0, ebitdaAlloc: 0, np: 0, npAlloc: 0 };
+}
+
+function finalize(c: PlColumn): PlColumn {
+  c.revenue = c.lines.REVENUE;
+  c.directCost = c.lines.DIRECT_COST;
+  c.gp = c.revenue + c.directCost;
+  c.opex = OPEX_LINES.reduce((a, k) => a + c.lines[k], 0);
+  c.ebitda = c.gp + c.opex + c.lines.IC_MGMT_FEE;
+  c.ebitdaAlloc = c.ebitda + c.allocation;
+  const below = c.lines.DEPRECIATION + c.lines.OTHER_INCOME + c.lines.FINANCE + c.lines.OTHER_EXPENSE + c.lines.TAX;
+  c.np = c.ebitda + below;
+  c.npAlloc = c.np + c.allocation;
+  return c;
+}
+
+export type AllocKey = "headcount" | "gp_share" | "revenue_share" | "fixed_pct";
+
+export interface AllocationResult {
+  key: AllocKey;
+  label: string;
+  /** SHARED 純業務淨成本（正數 = 成本） */
+  grossPool: number;
+  /** 向 Go Asia / JS 收取的外部 admin fee（正數），抵減 pool */
+  assocFee: number;
+  pool: number;
+  basis: Record<BuCode, number>;
+  share: Record<BuCode, number>;
+  amount: Record<BuCode, number>; // 正數 = 該 BU 承擔
+  basisLabel: string;
+  headcountYm?: string;
+}
+
+/** SHARED pool（PBHK Admin / Management / IT 外部 opex 淨額）*/
+export function sharedPool(p: Period, netAssocFee = true): { gross: number; assocFee: number; net: number; byLine: Record<MgmtLine, number>; byDept: { dept: number; name: string; amount: number }[] } {
+  const ext = linesIn(p, (l) => l.bu === "SHARED" && l.icFlag === "EXTERNAL");
+  const byLine = emptyCol().lines;
+  const byDeptMap = new Map<number, number>();
+  let gross = 0;
+  for (const l of ext) {
+    byLine[l.mgmtLine] += l.amount;
+    byDeptMap.set(l.dept, (byDeptMap.get(l.dept) ?? 0) + l.amount);
+    gross += l.amount;
+  }
+  const assocFee = netAssocFee ? associatesAdminFee(p) : 0;
+  return {
+    gross: -gross,
+    assocFee,
+    net: -gross - assocFee,
+    byLine,
+    byDept: [...byDeptMap.entries()].map(([dept, amount]) => ({ dept, name: DEPT_NAMES.get(dept) ?? `#${dept}`, amount: -amount })).sort((a, b) => b.amount - a.amount),
+  };
+}
+
+/** PB 60000022 Management Fee Income − 各 NetSuite 子公司 81000059/68 費用 = 向 associates（Go Asia / JS）收的外部 admin fee（§2.2 步驟 4） */
+export function associatesAdminFee(p: Period): number {
+  let pbIncome = 0;
+  let subExpense = 0;
+  for (const l of linesIn(p, (l) => l.icFlag === "IC_MGMT_FEE")) {
+    if (l.sub === 1) pbIncome += l.amount;
+    else subExpense += -l.amount;
+  }
+  return Math.max(0, Math.round(pbIncome - subExpense));
+}
+
+export function allocationFor(p: Period, key: AllocKey, netAssocFee = true): AllocationResult {
+  const rule = ALLOC_RULES.find((r) => r.keyType === key);
+  const sp = sharedPool(p, netAssocFee);
+  const basis = Object.fromEntries(BU_ORDER.map((b) => [b, 0])) as Record<BuCode, number>;
+  let basisLabel = "";
+  let headcountYm: string | undefined;
+  if (key === "headcount") {
+    const lastYm = ymOf(p.fy, p.months[p.months.length - 1]);
+    const yms = [...new Set(HEADCOUNT.map((h) => h.ym))].filter((y) => y <= lastYm).sort();
+    headcountYm = yms[yms.length - 1];
+    for (const h of HEADCOUNT) if (h.ym === headcountYm && CORE_BUS.includes(h.buCode as BuCode)) basis[h.buCode as BuCode] += h.headcount;
+    basisLabel = `人頭（${headcountYm ?? "未有紀錄"}）`;
+  } else if (key === "gp_share" || key === "revenue_share") {
+    const m = plByBu(p, 1);
+    for (const b of CORE_BUS) basis[b] = Math.max(0, key === "gp_share" ? m[b].gp : m[b].revenue);
+    basisLabel = key === "gp_share" ? "本期純業務 GP" : "本期純業務收入";
+  } else {
+    for (const b of CORE_BUS) basis[b] = Number(rule?.params?.[b] ?? 0);
+    basisLabel = "固定比例（allocation_rules.params）";
+  }
+  const total = CORE_BUS.reduce((a, b) => a + basis[b], 0) || 1;
+  const share = Object.fromEntries(BU_ORDER.map((b) => [b, 0])) as Record<BuCode, number>;
+  const amount = Object.fromEntries(BU_ORDER.map((b) => [b, 0])) as Record<BuCode, number>;
+  for (const b of CORE_BUS) {
+    share[b] = basis[b] / total;
+    amount[b] = Math.round(sp.net * share[b]);
+  }
+  return { key, label: rule?.label ?? key, grossPool: sp.gross, assocFee: sp.assocFee, pool: sp.net, basis, share, amount, basisLabel, headcountYm };
+}
+
+/** 管理帳 P&L：每個 BU 一欄（Layer 1 = 純業務；Layer 2 加分攤） */
+export function plByBu(p: Period, layer: 1 | 2, key: AllocKey = "headcount", netAssocFee = true): Record<BuCode, PlColumn> & { TOTAL: PlColumn } {
+  const cols = Object.fromEntries(BU_ORDER.map((b) => [b, emptyCol()])) as Record<BuCode, PlColumn>;
+  const total = emptyCol();
+  for (const l of linesIn(p, (l) => l.icFlag === "EXTERNAL")) {
+    cols[l.bu].lines[l.mgmtLine] += l.amount;
+    total.lines[l.mgmtLine] += l.amount;
+  }
+  if (layer === 2) {
+    const a = allocationFor(p, key, netAssocFee);
+    for (const b of CORE_BUS) cols[b].allocation = -a.amount[b];
+    cols.SHARED.allocation = a.pool;
+    // associates fee 已扣減 pool，SHARED 欄以 pool（淨）回沖；差額（assocFee）留喺 SHARED 作外部收入
+  }
+  for (const b of BU_ORDER) finalize(cols[b]);
+  finalize(total);
+  total.allocation = BU_ORDER.reduce((a, b) => a + cols[b].allocation, 0);
+  total.ebitdaAlloc = total.ebitda + total.allocation;
+  total.npAlloc = total.np + total.allocation;
+  return { ...cols, TOTAL: total };
+}
+
+/** 法定 P&L：每間公司一欄（含 IC 行） */
+export function plBySub(p: Period): { subs: number[]; cols: Record<number, PlColumn>; total: PlColumn } {
+  const cols: Record<number, PlColumn> = {};
+  const total = emptyCol();
+  for (const l of linesIn(p)) {
+    (cols[l.sub] ??= emptyCol()).lines[l.mgmtLine] += l.amount;
+    total.lines[l.mgmtLine] += l.amount;
+  }
+  const subs = Object.keys(cols).map(Number).sort((a, b) => a - b);
+  for (const s of subs) finalize(cols[s]);
+  finalize(total);
+  return { subs, cols, total };
+}
+
+// ── Bridge（§2.2 步驟 5）──────────────────────────────────────────────────────
+
+export interface BridgeSubRow {
+  sub: number;
+  legalNp: number;
+  icMgmtFee: number;
+  icInvoice: number;
+  icBill: number;
+  icJournal: number;
+  externalNp: number;
+  byBu: Record<BuCode, number>;
+}
+
+export function bridge(p: Period, key: AllocKey, netAssocFee = true) {
+  const rows = new Map<number, BridgeSubRow>();
+  const blank = (sub: number): BridgeSubRow => ({
+    sub,
+    legalNp: 0,
+    icMgmtFee: 0,
+    icInvoice: 0,
+    icBill: 0,
+    icJournal: 0,
+    externalNp: 0,
+    byBu: Object.fromEntries(BU_ORDER.map((b) => [b, 0])) as Record<BuCode, number>,
+  });
+  for (const l of linesIn(p)) {
+    const r = rows.get(l.sub) ?? blank(l.sub);
+    r.legalNp += l.amount;
+    switch (l.icFlag) {
+      case "IC_MGMT_FEE":
+        r.icMgmtFee += l.amount;
+        break;
+      case "IC_INVOICE":
+        r.icInvoice += l.amount;
+        break;
+      case "IC_BILL":
+        r.icBill += l.amount;
+        break;
+      case "IC_JOURNAL_OTHER":
+        r.icJournal += l.amount;
+        break;
+      default:
+        r.externalNp += l.amount;
+        r.byBu[l.bu] += l.amount;
+    }
+    rows.set(l.sub, r);
+  }
+  const subRows = [...rows.values()].sort((a, b) => a.sub - b.sub);
+  const sum = (f: (r: BridgeSubRow) => number) => subRows.reduce((a, r) => a + f(r), 0);
+  const alloc = allocationFor(p, key, netAssocFee);
+  const layer1 = Object.fromEntries(BU_ORDER.map((b) => [b, sum((r) => r.byBu[b])])) as Record<BuCode, number>;
+  const layer2 = Object.fromEntries(BU_ORDER.map((b) => [b, layer1[b] + (b === "SHARED" ? alloc.pool : CORE_BUS.includes(b) ? -alloc.amount[b] : 0)])) as Record<BuCode, number>;
+  return {
+    subRows,
+    totals: {
+      legalNp: sum((r) => r.legalNp),
+      icMgmtFee: sum((r) => r.icMgmtFee),
+      icInvoice: sum((r) => r.icInvoice),
+      icBill: sum((r) => r.icBill),
+      icJournal: sum((r) => r.icJournal),
+      externalNp: sum((r) => r.externalNp),
+    },
+    layer1,
+    layer2,
+    alloc,
+    check: Math.round(sum((r) => r.externalNp) - BU_ORDER.reduce((a, b) => a + layer1[b], 0)),
+  };
+}
+
+// ── Trend ────────────────────────────────────────────────────────────────────
+
+export type Metric = "REV" | "GP" | "EBITDA" | "NP";
+
+export function buMonthly(fy: string, bu: BuCode | "TOTAL", metric: Metric, layer: 1 | 2, key: AllocKey = "headcount"): (number | null)[] {
+  const last = lastMonthWithData(fy);
+  const out: (number | null)[] = [];
+  for (let m = 1; m <= 12; m++) {
+    if (m > last) {
+      out.push(null);
+      continue;
+    }
+    const cols = plByBu({ fy, months: [m] }, layer, key);
+    const c = cols[bu];
+    const v = metric === "REV" ? c.revenue : metric === "GP" ? c.gp : metric === "EBITDA" ? (layer === 2 ? c.ebitdaAlloc : c.ebitda) : layer === 2 ? c.npAlloc : c.np;
+    out.push(Math.round(v));
+  }
+  return out;
+}
+
+// ── Drill-down（BU → 公司/department → account）─────────────────────────────
+
+export interface DrillDept {
+  sub: number;
+  dept: number;
+  deptName: string;
+  revenue: number;
+  directCost: number;
+  opex: number;
+  other: number;
+  np: number;
+  accounts: { acct: number; acctnumber: string; name: string; mgmtLine: MgmtLine; amount: number; lines: number }[];
+}
+
+export function drill(p: Period, bu: BuCode): DrillDept[] {
+  const map = new Map<string, DrillDept>();
+  for (const l of linesIn(p, (l) => l.bu === bu && l.icFlag === "EXTERNAL")) {
+    const k = `${l.sub}|${l.dept}`;
+    let d = map.get(k);
+    if (!d) {
+      d = { sub: l.sub, dept: l.dept, deptName: DEPT_NAMES.get(l.dept) ?? `#${l.dept}`, revenue: 0, directCost: 0, opex: 0, other: 0, np: 0, accounts: [] };
+      map.set(k, d);
+    }
+    if (l.mgmtLine === "REVENUE") d.revenue += l.amount;
+    else if (l.mgmtLine === "DIRECT_COST") d.directCost += l.amount;
+    else if (OPEX_LINES.includes(l.mgmtLine)) d.opex += l.amount;
+    else d.other += l.amount;
+    d.np += l.amount;
+    const a = ACCOUNTS.get(l.acct);
+    let acc = d.accounts.find((x) => x.acct === l.acct);
+    if (!acc) {
+      acc = { acct: l.acct, acctnumber: a?.acctnumber ?? "", name: a?.fullname ?? `#${l.acct}`, mgmtLine: l.mgmtLine, amount: 0, lines: 0 };
+      d.accounts.push(acc);
+    }
+    acc.amount += l.amount;
+    acc.lines += l.lines;
+  }
+  const out = [...map.values()].sort((a, b) => Math.abs(b.np) - Math.abs(a.np) || b.revenue - a.revenue);
+  for (const d of out) d.accounts.sort((x, y) => x.acctnumber.localeCompare(y.acctnumber));
+  return out;
+}
+
+// ── BU cash contribution（§2.3 A）────────────────────────────────────────────
+
+export interface BuCashRow {
+  bu: BuCode;
+  extIn: number;
+  extOut: number;
+  icIn: number;
+  icOut: number;
+  net: number;
+}
+
+export function buCash(p: Period): { rows: BuCashRow[]; total: BuCashRow; hasData: boolean } {
+  const ms = new Set(p.months.map((m) => ymOf(p.fy, m)));
+  const map = new Map<BuCode, BuCashRow>();
+  for (const b of BU_ORDER) map.set(b, { bu: b, extIn: 0, extOut: 0, icIn: 0, icOut: 0, net: 0 });
+  let hasData = false;
+  for (const c of BU_CASH) {
+    if (!ms.has(c.ym)) continue;
+    hasData = true;
+    const bu = buFor(c.subsidiaryId, c.departmentId, c.ym);
+    const r = map.get(bu)!;
+    const ent = c.icEntityId ? IC_ENTITIES.get(c.icEntityId) : undefined;
+    const isIc = ent?.relation === "group";
+    if (c.direction === "in") {
+      if (isIc) r.icIn += c.amount;
+      else r.extIn += c.amount;
+    } else if (isIc) r.icOut += c.amount;
+    else r.extOut += c.amount;
+  }
+  const rows = BU_ORDER.map((b) => map.get(b)!);
+  for (const r of rows) r.net = r.extIn - r.extOut;
+  const total: BuCashRow = { bu: "OTHER", extIn: 0, extOut: 0, icIn: 0, icOut: 0, net: 0 };
+  for (const r of rows) {
+    total.extIn += r.extIn;
+    total.extOut += r.extOut;
+    total.icIn += r.icIn;
+    total.icOut += r.icOut;
+    total.net += r.net;
+  }
+  return { rows, total, hasData };
+}
+
+export function buCashMonthly(fy: string): { fm: number; ym: string; byBu: Record<BuCode, number>; extIn: number; extOut: number }[] {
+  const out: { fm: number; ym: string; byBu: Record<BuCode, number>; extIn: number; extOut: number }[] = [];
+  for (let m = 1; m <= 12; m++) {
+    const r = buCash({ fy, months: [m] });
+    if (!r.hasData) continue;
+    out.push({ fm: m, ym: ymOf(fy, m), byBu: Object.fromEntries(r.rows.map((x) => [x.bu, Math.round(x.net)])) as Record<BuCode, number>, extIn: r.total.extIn, extOut: r.total.extOut });
+  }
+  return out;
+}
+
+/** 月份範圍內有 cash 數據嘅 FY 列表 */
+export function cashFys(): string[] {
+  return [...new Set(BU_CASH.map((c) => fyOf(c.ym).fy))].sort();
+}
+
+// ── Inter-co 配對 / 結欠 ─────────────────────────────────────────────────────
+
+export interface IcPair {
+  from: number; // 開單公司
+  to: number; // 對手方
+  invoiced: number; // from 向 to 開 invoice（收入）
+  billed: number; // to 入 from 的 vendor bill（成本）
+  diff: number;
+}
+
+/** 借名開單追蹤：A 向 B 開的 IC invoice vs B 入 A 的 IC bill（§5.5） */
+export function icPairs(p: Period): IcPair[] {
+  const map = new Map<string, IcPair>();
+  const get = (from: number, to: number) => {
+    const k = `${from}|${to}`;
+    let r = map.get(k);
+    if (!r) {
+      r = { from, to, invoiced: 0, billed: 0, diff: 0 };
+      map.set(k, r);
+    }
+    return r;
+  };
+  for (const l of linesIn(p, (l) => l.icFlag === "IC_INVOICE" || l.icFlag === "IC_BILL")) {
+    if (l.counterparty == null) continue;
+    if (l.icFlag === "IC_INVOICE") get(l.sub, l.counterparty).invoiced += l.amount;
+    else get(l.counterparty, l.sub).billed += -l.amount;
+  }
+  const out = [...map.values()];
+  for (const r of out) r.diff = r.invoiced - r.billed;
+  return out.sort((a, b) => Math.abs(b.diff) - Math.abs(a.diff));
+}
+
+export function mgmtFeeCheck(p: Period): { pbIncome: number; bySub: { sub: number; expense: number }[]; subTotal: number; assoc: number } {
+  let pbIncome = 0;
+  const bySub = new Map<number, number>();
+  for (const l of linesIn(p, (l) => l.icFlag === "IC_MGMT_FEE")) {
+    if (l.sub === 1) pbIncome += l.amount;
+    else bySub.set(l.sub, (bySub.get(l.sub) ?? 0) + -l.amount);
+  }
+  const rows = [...bySub.entries()].map(([sub, expense]) => ({ sub, expense })).sort((a, b) => a.sub - b.sub);
+  const subTotal = rows.reduce((a, r) => a + r.expense, 0);
+  return { pbIncome, bySub: rows, subTotal, assoc: pbIncome - subTotal };
+}
+
+export interface IcBalance {
+  sub: number;
+  acct: number;
+  acctnumber: string;
+  name: string;
+  net: number; // 正 = 應收（Due From）、負 = 應付（Due To）
+  asOf: string;
+}
+
+/** 截至最後 sync 的 inter-co 結欠（fact_gl 累計） */
+export function icBalances(): IcBalance[] {
+  const map = new Map<string, IcBalance>();
+  let asOf = "";
+  for (const r of IC_BALANCES) {
+    if (r.ym > asOf) asOf = r.ym;
+    const k = `${r.subsidiaryId}|${r.accountId}`;
+    let b = map.get(k);
+    if (!b) {
+      const a = ACCOUNTS.get(r.accountId);
+      b = { sub: r.subsidiaryId, acct: r.accountId, acctnumber: a?.acctnumber ?? "", name: a?.fullname ?? `#${r.accountId}`, net: 0, asOf: "" };
+      map.set(k, b);
+    }
+    b.net += r.net;
+  }
+  const out = [...map.values()].filter((b) => Math.abs(b.net) >= 1);
+  for (const b of out) b.asOf = asOf;
+  return out.sort((a, b) => a.sub - b.sub || Math.abs(b.net) - Math.abs(a.net));
+}
+
+// ── Data quality（§5.8）──────────────────────────────────────────────────────
+
+export interface UntaggedRow {
+  sub: number;
+  amount: number; // 絕對值合計
+  lines: number;
+  totalAbs: number;
+  pct: number;
+}
+
+export function untaggedBySub(p: Period): UntaggedRow[] {
+  const map = new Map<number, UntaggedRow>();
+  for (const l of linesIn(p)) {
+    const r = map.get(l.sub) ?? { sub: l.sub, amount: 0, lines: 0, totalAbs: 0, pct: 0 };
+    const abs = Math.abs(l.amount);
+    r.totalAbs += abs;
+    if (l.dept === 0) {
+      r.amount += abs;
+      r.lines += l.lines;
+    }
+    map.set(l.sub, r);
+  }
+  const out = [...map.values()].sort((a, b) => a.sub - b.sub);
+  for (const r of out) r.pct = r.totalAbs ? r.amount / r.totalAbs : 0;
+  return out;
+}
+
+export function untaggedByFy(): { fy: string; bySub: Record<number, number> }[] {
+  const out: { fy: string; bySub: Record<number, number> }[] = [];
+  for (const fy of availableFys()) {
+    const rows = untaggedBySub({ fy, months: Array.from({ length: 12 }, (_, i) => i + 1) });
+    out.push({ fy, bySub: Object.fromEntries(rows.map((r) => [r.sub, r.pct])) });
+  }
+  return out;
+}
+
+/** 借名開單線：同一公司 × department 收入 ≈ 直接成本（§1.3 觀察） */
+export function passThroughLines(p: Period): { sub: number; dept: number; deptName: string; revenue: number; directCost: number; icShare: number }[] {
+  const map = new Map<string, { sub: number; dept: number; deptName: string; revenue: number; directCost: number; icAbs: number; totalAbs: number }>();
+  for (const l of linesIn(p, (l) => l.mgmtLine === "REVENUE" || l.mgmtLine === "DIRECT_COST")) {
+    const k = `${l.sub}|${l.dept}`;
+    const r = map.get(k) ?? { sub: l.sub, dept: l.dept, deptName: DEPT_NAMES.get(l.dept) ?? `#${l.dept}`, revenue: 0, directCost: 0, icAbs: 0, totalAbs: 0 };
+    if (l.mgmtLine === "REVENUE") r.revenue += l.amount;
+    else r.directCost += -l.amount;
+    r.totalAbs += Math.abs(l.amount);
+    if (l.icFlag !== "EXTERNAL") r.icAbs += Math.abs(l.amount);
+    map.set(k, r);
+  }
+  return [...map.values()]
+    .filter((r) => r.revenue > 0 && r.directCost > 0 && Math.abs(r.revenue - r.directCost) / Math.max(r.revenue, r.directCost) < 0.15)
+    .map((r) => ({ sub: r.sub, dept: r.dept, deptName: r.deptName, revenue: r.revenue, directCost: r.directCost, icShare: r.totalAbs ? r.icAbs / r.totalAbs : 0 }))
+    .sort((a, b) => b.revenue - a.revenue);
+}
+
+/** 未在 bu_mapping 明確列出（靠公司預設）嘅 department 使用量 */
+export function mappingCoverage(p: Period): { sub: number; dept: number; deptName: string; bu: BuCode; explicit: boolean; amountAbs: number }[] {
+  const map = new Map<string, { sub: number; dept: number; deptName: string; bu: BuCode; explicit: boolean; amountAbs: number }>();
+  for (const l of linesIn(p, (l) => l.icFlag === "EXTERNAL")) {
+    const k = `${l.sub}|${l.dept}`;
+    let r = map.get(k);
+    if (!r) {
+      const explicit = BU_MAPPING.some((m) => m.subsidiaryId === l.sub && m.departmentId === l.dept);
+      r = { sub: l.sub, dept: l.dept, deptName: DEPT_NAMES.get(l.dept) ?? `#${l.dept}`, bu: l.bu, explicit, amountAbs: 0 };
+      map.set(k, r);
+    }
+    r.amountAbs += Math.abs(l.amount);
+  }
+  return [...map.values()].sort((a, b) => a.sub - b.sub || b.amountAbs - a.amountAbs);
+}
+
+export function icFlagSummary(p: Period): { flag: IcFlag; income: number; cost: number; lines: number }[] {
+  const map = new Map<IcFlag, { flag: IcFlag; income: number; cost: number; lines: number }>();
+  for (const l of linesIn(p)) {
+    const r = map.get(l.icFlag) ?? { flag: l.icFlag, income: 0, cost: 0, lines: 0 };
+    if (l.amount >= 0) r.income += l.amount;
+    else r.cost += -l.amount;
+    r.lines += l.lines;
+    map.set(l.icFlag, r);
+  }
+  const order: IcFlag[] = ["EXTERNAL", "IC_MGMT_FEE", "IC_INVOICE", "IC_BILL", "IC_JOURNAL_OTHER"];
+  return order.filter((f) => map.has(f)).map((f) => map.get(f)!);
+}

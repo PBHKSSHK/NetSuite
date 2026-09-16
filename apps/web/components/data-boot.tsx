@@ -7,6 +7,7 @@
 
 import { useEffect, useState } from "react";
 import { hydrate } from "@/lib/store";
+import { hydrateBu } from "@/lib/bu-store";
 import { supabase } from "@/lib/supabase";
 
 type Phase = "checking" | "syncing" | "ready" | "error" | "anon";
@@ -24,7 +25,7 @@ export function DataBoot({ children }: { children: React.ReactNode }) {
       started = true;
       if (!cancelled) setPhase("syncing");
       try {
-        await hydrate();
+        await Promise.all([hydrate(), hydrateBu()]);
         if (!cancelled) setPhase("ready");
       } catch (e) {
         started = false; // hydrate 內部會 reset promise，容許 retry

@@ -52,3 +52,13 @@ vendor 863,1027,2714,2873,3106,3328,2568）。新增集團 entity 時要同步�
 - 每月 `SUM(debit) - SUM(credit)` by subsidiary = NetSuite Income Statement net（trandate 口徑）。
 - Bridge 頁：Σ 公司外部 NP − Σ BU Layer 1 NP 必須 = 0（app 內即時檢查）。
 - IC 抵銷淨額（mgmt fee / invoice / bill / journal）全年應接近 0；差額喺 Data quality 頁逐對公司列出。
+
+## 已知範圍限制
+
+- NetSuite MCP role 睇唔到 subsidiary 6（Go Asia Plus Travel）、3（CLS Production）、4（Elimination）
+  嘅交易（SuiteQL 回 0 行），所以 `fact_bu_pl` 只含 5 間核心公司（1/2/5/7/8）——同 blueprint
+  §1.1 口徑一致；Go Asia 以 associates 身份經 PB `60000022` 差額體現（Shared cost 頁）。
+  每日 sync 用嘅 OAuth integration 有全 subsidiary 權限，日後 incremental 會補入 sub 6 行，
+  `bu_mapping` 已將 sub 6 預設歸「其他」。
+- FY2024/25 management fee 帳（60000022 / 81000059 / 81000068）按 trandate 口徑同 `fact_gl`
+  （postingperiod 口徑）逐 department 一仙不差（2026-09-16 覆核）。

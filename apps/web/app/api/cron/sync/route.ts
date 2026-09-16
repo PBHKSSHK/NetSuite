@@ -174,6 +174,75 @@ export async function GET(req: Request) {
       }))
     );
 
+    // ── BU 還原 facts（blueprint v0.1 §3.1）：重抽最近 4 個月（防 back-dated 入帳）──
+    //    query 拆兩條（IC journal 用 correlated EXISTS），避免 SuiteQL 全表子查詢 timeout。
+    const IC_ENT = "1447,1488,1489,2674,2762,2763,2792,2907,3201,3207,3245,3584,3958,4468,4576,4113,863,1027,2714,2873,3106,3328,2568";
+    const IC_CUST = "1447,1488,1489,2674,2762,2763,2792,2907,3201,3207,3245,3584,3958,4468,4576,4113";
+    const IC_VEND = "863,1027,2714,2873,3106,3328,2568";
+    const ICJ = "EXISTS (SELECT 1 FROM transactionaccountingline x JOIN account ax ON ax.id = x.account WHERE x.transaction = t.id AND (ax.acctnumber LIKE '250000%' OR ax.acctnumber LIKE '35002%'))";
+    const monthStart = (offset: number) => {
+      const d = new Date();
+      return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() - offset, 1)).toISOString().slice(0, 10);
+    };
+    const buFrom = monthStart(3);
+    const buTo = monthStart(-1);
+    const buWindow = `t.trandate >= TO_DATE('${buFrom}','YYYY-MM-DD') AND t.trandate < TO_DATE('${buTo}','YYYY-MM-DD')`;
+    const buPlBase = `FROM transactionaccountingline tal JOIN transaction t ON t.id = tal.transaction JOIN transactionline tl ON tl.transaction = tal.transaction AND tl.id = tal.transactionline JOIN account a ON a.id = tal.account WHERE tal.posting = 'T' AND t.posting = 'T' AND a.accttype IN ('Income','COGS','Expense','OthIncome','OthExpense') AND ${buWindow}`;
+    const buA = await sqAll(
+      token,
+      `SELECT TO_CHAR(t.trandate,'YYYY-MM') AS ym, tl.subsidiary AS sub, NVL(tl.department,0) AS dept, tal.account AS acct, t.type AS ttype, CASE WHEN t.entity IN (${IC_ENT}) THEN t.entity ELSE 0 END AS ic_entity, SUM(NVL(tal.debit,0)) AS d, SUM(NVL(tal.credit,0)) AS c, COUNT(*) AS n ${buPlBase} AND NOT (t.type = 'Journal' AND ${ICJ}) GROUP BY TO_CHAR(t.trandate,'YYYY-MM'), tl.subsidiary, NVL(tl.department,0), tal.account, t.type, CASE WHEN t.entity IN (${IC_ENT}) THEN t.entity ELSE 0 END`
+    );
+    const buB = await sqAll(
+      token,
+      `SELECT TO_CHAR(t.trandate,'YYYY-MM') AS ym, tl.subsidiary AS sub, NVL(tl.department,0) AS dept, tal.account AS acct, SUM(NVL(tal.debit,0)) AS d, SUM(NVL(tal.credit,0)) AS c, COUNT(*) AS n ${buPlBase} AND t.type = 'Journal' AND ${ICJ} GROUP BY TO_CHAR(t.trandate,'YYYY-MM'), tl.subsidiary, NVL(tl.department,0), tal.account`
+    );
+    await ingest("fact_bu_pl", [
+      ...buA.map((r) => ({
+        ym: r.ym,
+        subsidiary_id: Number(r.sub),
+        department_id: Number(r.dept),
+        account_id: Number(r.acct),
+        txn_type: r.ttype,
+        ic_entity_id: Number(r.ic_entity),
+        ic_journal: false,
+        debit: Number(r.d),
+        credit: Number(r.c),
+        lines: Number(r.n),
+      })),
+      ...buB.map((r) => ({
+        ym: r.ym,
+        subsidiary_id: Number(r.sub),
+        department_id: Number(r.dept),
+        account_id: Number(r.acct),
+        txn_type: "Journal",
+        ic_entity_id: 0,
+        ic_journal: true,
+        debit: Number(r.d),
+        credit: Number(r.c),
+        lines: Number(r.n),
+      })),
+    ]);
+
+    const pWindow = `p.trandate >= TO_DATE('${buFrom}','YYYY-MM-DD') AND p.trandate < TO_DATE('${buTo}','YYYY-MM-DD')`;
+    const cashIn = await sqAll(
+      token,
+      `SELECT TO_CHAR(p.trandate,'YYYY-MM') AS ym, tl.subsidiary AS sub, NVL(il.department,0) AS dept, CASE WHEN inv.entity IN (${IC_CUST}) THEN inv.entity ELSE 0 END AS ic_entity, SUM(ABS(NVL(il.foreignamount,0)) / ABS(inv.foreigntotal) * NVL(ntll.foreignamount,0) * NVL(p.exchangerate,1)) AS amt, COUNT(DISTINCT p.id) AS pays FROM transaction p JOIN nexttransactionlinelink ntll ON ntll.nextdoc = p.id AND ntll.linktype = 'Payment' JOIN transaction inv ON inv.id = ntll.previousdoc AND inv.type = 'CustInvc' JOIN transactionline tl ON tl.transaction = p.id AND tl.mainline = 'T' JOIN transactionline il ON il.transaction = inv.id AND il.mainline = 'F' AND il.taxline = 'F' AND il.iscogs = 'F' WHERE p.type = 'CustPymt' AND NVL(inv.foreigntotal,0) <> 0 AND ${pWindow} GROUP BY TO_CHAR(p.trandate,'YYYY-MM'), tl.subsidiary, NVL(il.department,0), CASE WHEN inv.entity IN (${IC_CUST}) THEN inv.entity ELSE 0 END`
+    );
+    const cashOut = await sqAll(
+      token,
+      `SELECT TO_CHAR(p.trandate,'YYYY-MM') AS ym, tl.subsidiary AS sub, NVL(bl.department,0) AS dept, CASE WHEN b.entity IN (${IC_VEND}) THEN b.entity ELSE 0 END AS ic_entity, SUM(ABS(NVL(bl.foreignamount,0)) / ABS(b.foreigntotal) * ABS(NVL(ntll.foreignamount,0)) * NVL(p.exchangerate,1)) AS amt, COUNT(DISTINCT p.id) AS pays FROM transaction p JOIN nexttransactionlinelink ntll ON ntll.nextdoc = p.id AND ntll.linktype = 'Payment' JOIN transaction b ON b.id = ntll.previousdoc AND b.type = 'VendBill' JOIN transactionline tl ON tl.transaction = p.id AND tl.mainline = 'T' JOIN transactionline bl ON bl.transaction = b.id AND bl.mainline = 'F' AND bl.taxline = 'F' WHERE p.type = 'VendPymt' AND NVL(b.foreigntotal,0) <> 0 AND ${pWindow} GROUP BY TO_CHAR(p.trandate,'YYYY-MM'), tl.subsidiary, NVL(bl.department,0), CASE WHEN b.entity IN (${IC_VEND}) THEN b.entity ELSE 0 END`
+    );
+    const cashRow = (direction: "in" | "out") => (r: Record<string, string>) => ({
+      ym: r.ym,
+      subsidiary_id: Number(r.sub),
+      department_id: Number(r.dept),
+      direction,
+      ic_entity_id: Number(r.ic_entity),
+      amount: Math.round(Number(r.amt) * 100) / 100,
+      payments: Number(r.pays),
+    });
+    await ingest("fact_bu_cash", [...cashIn.map(cashRow("in")), ...cashOut.map(cashRow("out"))]);
+
     const bank = await sqAll(
       token,
       `SELECT tl.subsidiary AS sub, tal.account AS acct, SUM(NVL(tal.debit,0) - NVL(tal.credit,0)) AS bal FROM transactionaccountingline tal JOIN transaction t ON t.id = tal.transaction JOIN transactionline tl ON tl.transaction = tal.transaction AND tl.id = tal.transactionline JOIN account a ON a.id = tal.account WHERE tal.posting = 'T' AND a.accttype = 'Bank' GROUP BY tl.subsidiary, tal.account`
@@ -185,9 +254,9 @@ export async function GET(req: Request) {
     );
 
     await ingest("sync_log", [
-      { job: "daily-sync", started_at: started, finished_at: new Date().toISOString(), rows: gl.length + bank.length, status: "ok" },
+      { job: "daily-sync", started_at: started, finished_at: new Date().toISOString(), rows: gl.length + bank.length + buA.length + buB.length, status: "ok" },
     ]);
-    return Response.json({ ok: true, gl: gl.length, bank: bank.length });
+    return Response.json({ ok: true, gl: gl.length, bank: bank.length, bu_pl: buA.length + buB.length, bu_cash: cashIn.length + cashOut.length });
   } catch (e) {
     await ingest("sync_log", [
       { job: "daily-sync", started_at: started, finished_at: new Date().toISOString(), rows: 0, status: "error", error: String(e).slice(0, 500) },

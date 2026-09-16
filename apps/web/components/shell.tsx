@@ -9,6 +9,7 @@ import { supabase } from "@/lib/supabase";
 
 const NAV = [
   { href: "/", label: "集團總覽", en: "Overview" },
+  { href: "/bu", label: "BU 還原", en: "BU P&L / Cash", section: true },
   { href: "/pnl", label: "損益表", en: "P&L" },
   { href: "/balance-sheet", label: "資產負債表", en: "Balance Sheet" },
   { href: "/budget", label: "預算", en: "Budgeting" },
@@ -83,7 +84,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
         </div>
         <nav className="flex lg:flex-col overflow-x-auto px-2 py-2 gap-1">
           {NAV.map((item) => {
-            const active = pathname === item.href;
+            const active = item.href === "/bu" ? pathname.startsWith("/bu") : pathname === item.href;
             return (
               <Link
                 key={item.href}
@@ -103,7 +104,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
         <div className="hidden lg:block px-4 py-3 mt-2 border-t border-grid text-[11px] text-ink3 leading-relaxed">
           數據截至 {DATA_AS_OF}
           <br />
-          Blueprint v1.0 · Phase 1–2 preview
+          Blueprint v1.0 + BU 還原 v0.1
           <div className="mt-2">
             <button
               onClick={handleSignOut}

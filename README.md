@@ -13,6 +13,22 @@ departments、Untagged bucket）。每頁有 DEMO banner。
 依 blueprint §10.5：**未過 §10.4 對數驗收，唔會開放真數俾管理層。**
 真實 NetSuite sync 屬下一步（見下面 roadmap）。
 
+## BU 還原模組（Blueprint v0.1 · 2026-09-16）
+
+`/bu` 六頁：BU Cockpit、BU P&L（管理帳 per BU / 法定 per company、Layer 1 純業務 / Layer 2 分攤後、
+drill-down）、Bridge（法定 → 剔 IC → BU → 分攤）、Shared cost 分攤（人頭 / GP / 收入 / 固定比例對比）、
+BU Cashflow（payment link 按 department 分攤 + inter-co 結欠）、Data quality（未標 department、
+IC 配對、mgmt fee 對稱、對照表）。
+
+- 數據：`fact_bu_pl`（2021-04 起，按月 × 公司 × department × account × 交易類型 × IC entity）、
+  `fact_bu_cash`（2025-04 起）；規則表 `bu_mapping` / `ic_entity_map` / `ic_account_map` /
+  `allocation_rules` / `headcount_monthly` / `account_group_map`（`supabase/migrations/0002_bu_restoration.sql`）。
+- 引擎：`apps/web/lib/bu.ts`（ic_flag、BU 歸集、Layer 1/2、Bridge、cash、data quality）；
+  數據層 `apps/web/lib/bu-store.ts`。
+- ETL / 增量：`packages/sync/bu-restoration.md`；blueprint 全文 `docs/bu-restoration-blueprint.md`。
+- 704 成立前嘅 Production 業務坐喺 PBHK `Production` dept（bu_mapping 已映射 → Production BU），
+  所以 FY2021/22 起可以連續睇；FY22/23 前 PBHK 未標 department 比例高，Data quality 頁有標示。
+
 ## Repo 結構（§10.1）
 
 ```

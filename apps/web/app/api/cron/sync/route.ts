@@ -176,10 +176,12 @@ export async function GET(req: Request) {
 
     // ── BU 還原 facts（blueprint v0.1 §3.1）：重抽最近 4 個月（防 back-dated 入帳）──
     //    query 拆兩條（IC journal 用 correlated EXISTS），避免 SuiteQL 全表子查詢 timeout。
-    const IC_ENT = "1447,1488,1489,2674,2762,2763,2792,2907,3201,3207,3245,3584,3958,4468,4576,4113,863,1027,2714,2873,3106,3328,2568";
+    //    entity 清單 = ic_entity_map 全部（group + related_external）；新增 entity 要同步更新。
+    const IC_ENT = "1447,1488,1489,2674,2762,2763,2792,2907,3201,3207,3958,4468,4576,1517,1518,1521,1522,1767,863,1027,2714,2873,3106,3328,2568,1524,1525,1526,1527,1545,2930,3245,3584,4113,1402,2432,2789,3511,3634,4087,4126,4399,762,3626,4623";
     const IC_CUST = "1447,1488,1489,2674,2762,2763,2792,2907,3201,3207,3245,3584,3958,4468,4576,4113";
     const IC_VEND = "863,1027,2714,2873,3106,3328,2568";
-    const ICJ = "EXISTS (SELECT 1 FROM transactionaccountingline x JOIN account ax ON ax.id = x.account WHERE x.transaction = t.id AND (ax.acctnumber LIKE '250000%' OR ax.acctnumber LIKE '35002%'))";
+    // IC 分攤 / management fee journal：同一 journal 內有 60000022 或 81000059 行（PB 側 Share of expenses + mgmt fee income；子公司側 mgmt fee + Share of PBHK expenses + 年結 DN）
+    const ICJ = "EXISTS (SELECT 1 FROM transactionaccountingline x JOIN account ax ON ax.id = x.account WHERE x.transaction = t.id AND ax.acctnumber IN ('60000022','81000059'))";
     const monthStart = (offset: number) => {
       const d = new Date();
       return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() - offset, 1)).toISOString().slice(0, 10);

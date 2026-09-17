@@ -5,7 +5,7 @@
 
 import { BuFilterBar } from "@/components/bu-filter-bar";
 import { Card } from "@/components/ui";
-import { IC_FLAG_LABEL, availableFys, buLabel, icFlagSummary, icPairs, mappingCoverage, mgmtFeeCheck, passThroughLines, periodLabelOf, untaggedByFy, untaggedBySub } from "@/lib/bu";
+import { IC_FLAG_LABEL, availableFys, buLabel, icFlagSummary, icPairs, mappingCoverage, mgmtFeeCheck, passThroughLines, periodLabelOf, taxSavingCheck, taxSavingRows, untaggedByFy, untaggedBySub } from "@/lib/bu";
 import { useBuFilters } from "@/lib/bu-filters";
 import { BU_MAPPING, IC_ENTITIES } from "@/lib/bu-store";
 import { subName } from "@/lib/bu-ui";
@@ -23,6 +23,8 @@ export default function QualityPage() {
   const cov = mappingCoverage(p);
   const mf = mgmtFeeCheck(p);
   const ents = [...IC_ENTITIES.values()].sort((a, b) => a.entityType.localeCompare(b.entityType) || a.entityId - b.entityId);
+  const taxRows = taxSavingRows(f.fy);
+  const taxCheck = taxSavingCheck(f.fy);
 
   return (
     <div className="space-y-4">
@@ -164,6 +166,56 @@ export default function QualityPage() {
           </table>
         </Card>
       </div>
+
+      <Card title={`年結 tax planning 開單（會計 worksheet）vs 本系統剔除 — ${f.fy}`} subtitle="worksheet：每行正數 = 開單（收入）方、負數 = 被扣方；本系統：全年剔除嘅 IC invoice / bill / 分攤 journal 淨額（收入正、成本負）。差額 = 未識別嘅集團 entity 或非年結 IC 交易（借名開單、recharge）。">
+        <div className="grid lg:grid-cols-2 gap-4">
+          <table className="report-table w-full text-[12px]">
+            <thead>
+              <tr>
+                <th className="text-left">性質</th>
+                <th className="text-left">公司</th>
+                <th className="num">金額</th>
+              </tr>
+            </thead>
+            <tbody>
+              {taxRows.map((r, i) => (
+                <tr key={i}>
+                  <td className="text-left">{r.nature}</td>
+                  <td className="text-left">{subName(r.sub)}</td>
+                  <td className={`num ${r.amount < 0 ? "text-critical" : ""}`}>{hkd(r.amount)}</td>
+                </tr>
+              ))}
+              {!taxRows.length && (
+                <tr>
+                  <td colSpan={3} className="text-ink3 text-left">
+                    worksheet 冇此財年紀錄
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+          <table className="report-table w-full text-[12px]">
+            <thead>
+              <tr>
+                <th className="text-left">公司</th>
+                <th className="num">worksheet 淨額</th>
+                <th className="num">本系統剔除淨額</th>
+                <th className="num">差額</th>
+              </tr>
+            </thead>
+            <tbody>
+              {taxCheck.map((r) => (
+                <tr key={r.sub}>
+                  <td className="text-left">{subName(r.sub)}</td>
+                  <td className="num">{hkd(r.sheet)}</td>
+                  <td className="num">{hkd(r.eliminated)}</td>
+                  <td className="num text-ink2">{hkd(r.diff)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </Card>
 
       <Card title="Pass-through 線（收入 ≈ 直接成本 ±15%）" subtitle="借名開單特徵（§1.3 觀察）；IC 比例 = 該線流量中集團內交易佔比">
         <table className="report-table w-full text-[13px] max-w-3xl">

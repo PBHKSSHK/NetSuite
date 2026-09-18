@@ -167,14 +167,14 @@ export default function BridgePage() {
         </div>
       </Card>
 
-      <Card title="每個 BU：純業務（Layer 1）→ 分攤（Layer 2）" subtitle={`分攤 key：${b.alloc.label} · pool ${hkdCompact(b.alloc.pool)}（gross ${hkdCompact(b.alloc.grossPool)} − Go Asia/JS admin fee ${hkdCompact(b.alloc.assocFee)}）`}>
+      <Card title="每個 BU：純業務（Layer 1）→ 分攤（Layer 2）" subtitle={`分攤 key：${b.alloc.label} · pool ${hkdCompact(b.alloc.pool)}（gross ${hkdCompact(b.alloc.grossPool)} − Go Asia/JS 人頭份額 ${hkdCompact(b.alloc.assocFee)}）· 老闆人工 ${hkdCompact(b.alloc.director.sheetTotal)}（帳面 ${hkdCompact(b.alloc.director.ledgerTotal)}）`}>
         <div className="overflow-x-auto">
           <table className="report-table w-full text-[13px] max-w-3xl">
             <thead>
               <tr>
                 <th className="text-left">BU</th>
                 <th className="num">Layer 1 純業務 NP</th>
-                <th className="num">分攤（承擔 −／釋出 +）</th>
+                <th className="num">分攤（平台成本 + 老闆人工；承擔 −／釋出 +）</th>
                 <th className="num">Layer 2 管理帳 NP</th>
                 <th className="num">分攤比例</th>
               </tr>
@@ -199,7 +199,7 @@ export default function BridgePage() {
             </tbody>
           </table>
         </div>
-        <p className="text-[11px] text-ink3 mt-2">分攤總和 = 0（pool 由 SHARED 釋出，4 個 BU 承擔）；集團管理帳 NP 不因分攤而改變。</p>
+        <p className="text-[11px] text-ink3 mt-2">分攤總和 = 0（pool + 老闆人工由 SHARED 釋出，4 個 BU 承擔）；集團管理帳 NP 不因分攤而改變。SHARED 分攤後剩餘 = Go Asia / JS 人頭份額（應向 associates 收回）+ 老闆人工 worksheet 口徑 vs 帳面差異。</p>
       </Card>
     </div>
   );

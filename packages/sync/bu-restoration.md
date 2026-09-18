@@ -14,7 +14,7 @@ app（`apps/web/lib/bu.ts`）按 reference tables 即時推算，所以改 `bu_m
 經 NetSuite MCP 逐月執行下列 query（每月 2 條，避免全表子查詢 timeout），
 再 `INSERT … ON CONFLICT DO UPDATE` 入 Supabase。
 
-**Query A** — 所有 P&L 行，剔除「同單有 Amount Due From/To 對手方」嘅 Journal：
+**Query A** — 所有 P&L 行，剔除 IC 分攤 / mgmt fee journal：
 
 ```sql
 SELECT TO_CHAR(t.trandate,'YYYY-MM') AS ym, tl.subsidiary AS sub, NVL(tl.department,0) AS dept,
@@ -28,21 +28,19 @@ JOIN account a ON a.id = tal.account
 WHERE tal.posting = 'T' AND t.posting = 'T'
   AND a.accttype IN ('Income','COGS','Expense','OthIncome','OthExpense')
   AND t.trandate >= TO_DATE(:start,'YYYY-MM-DD') AND t.trandate < TO_DATE(:end,'YYYY-MM-DD')
-  AND NOT (t.type = 'Journal' AND EXISTS (
-        SELECT 1 FROM transactionaccountingline x JOIN account ax ON ax.id = x.account
-        WHERE x.transaction = t.id AND (ax.acctnumber LIKE '250000%' OR ax.acctnumber LIKE '35002%')))
+  AND t.id NOT IN (<該月 mgmt fee journal id 清單>)
 GROUP BY …   -- → ic_journal = false
 ```
 
-**Query B** — 只抽 IC journal（同上 EXISTS 條件，`t.type = 'Journal'`）→ `ic_journal = true`，
+**Query B** — 只抽 IC 分攤 / mgmt fee journal（`t.id IN (<該月 journal id 清單>)`）→ `ic_journal = true`，
 `txn_type = 'Journal'`、`ic_entity_id = 0`。
 
 **Cash（§2.3 A）** — `CustPymt` → `nexttransactionlinelink(linktype='Payment')` → invoice 行
 （`mainline='F' AND taxline='F' AND iscogs='F'`），收款按 `ABS(line.foreignamount) / ABS(invoice.foreigntotal)`
 比例分攤到行 department；`VendPymt` → bill 行同理。已對 control total（不分行）一仙不差。
 
-IC entity 清單 = `ic_entity_map`（customer 1447,1488,1489,2674,2762,2763,2792,2907,3201,3207,3245,3584,3958,4468,4576,4113；
-vendor 863,1027,2714,2873,3106,3328,2568）。新增集團 entity 時要同步更新 `apps/web/app/api/cron/sync/route.ts` 內嘅常數。
+IC entity 清單 = `ic_entity_map` 全部 entity_id（2026-09-17：45 個）。新增集團 entity 時要同步更新
+`apps/web/app/api/cron/sync/route.ts` 內嘅 `IC_ENT` 常數並補抽受影響月份。
 
 ## 每日增量
 
@@ -66,3 +64,18 @@ vendor 863,1027,2714,2873,3106,3328,2568）。新增集團 entity 時要同步�
   `bu_mapping` 已將 sub 6 預設歸「其他」。
 - FY2024/25 management fee 帳（60000022 / 81000059 / 81000068）按 trandate 口徑同 `fact_gl`
   （postingperiod 口徑）逐 department 一仙不差（2026-09-16 覆核）。
+
+## 會計 worksheet 規則（2026-09-17，見 supabase/migrations/0003_allocation_reference.sql）
+
+- `gp_share_monthly`：2 allocation.xlsx「GP%」— 每月各 worksheet 欄 GP%（PBHK Production / Youtube /
+  704 Production / SSHK ePR / SSHK Comm / CLS / JM）。Youtube 同 PBHK Production 喺 NetSuite 同一 dept，
+  app 併入 Production BU；SSHK Comm 併入 ePR。
+- `headcount_monthly`：「headcount」sheet 逐月，含 JS / Go Asia（`ASSOC_JS` / `ASSOC_GOASIA`）。
+- `director_alloc_monthly`：「director」sheet — 老闆人工 BU 報表口徑 + 帳面 ledger salary / MPF。
+- `tax_saving_adjustments`：年結 tax planning 開單清單（正 = 開單方、負 = 被扣方）。
+- `bu_reclass_rules`：2021-04 → 2021-09 PBHK Sales dept 81000084 / 81000063 → CLS（180,673.37 + 9,033.67，
+  同 fact 逐月一仙不差）。
+- 分攤引擎（`lib/bu.ts` `allocationFor(key='workbook')`）：Admin / IT pool 先扣 (JS + Go Asia) ÷ 全體
+  headcount 份額，餘額按當月 GP% 分落 BU；Management pool 100% 按 GP%；老闆人工（81000039 + Mgt dept
+  81000063）唔入 pool，按 director sheet 固定金額分落 BU，worksheet 與帳面差額留喺 PB 平台。
+- 重載 seeds：`packages/sync/reference/0003_seed_allocation_reference.sql`（由 workbook 生成）。

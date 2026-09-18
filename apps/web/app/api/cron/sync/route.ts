@@ -175,13 +175,14 @@ export async function GET(req: Request) {
     );
 
     // ── BU 還原 facts（blueprint v0.1 §3.1）：重抽最近 4 個月（防 back-dated 入帳）──
-    //    query 拆兩條（IC journal 用 correlated EXISTS），避免 SuiteQL 全表子查詢 timeout。
+    //    query 拆兩條（IC journal 以 id 清單分拆），避免 SuiteQL 全表子查詢 timeout。
     //    entity 清單 = ic_entity_map 全部（group + related_external）；新增 entity 要同步更新。
     const IC_ENT = "1447,1488,1489,2674,2762,2763,2792,2907,3201,3207,3958,4468,4576,1517,1518,1521,1522,1767,863,1027,2714,2873,3106,3328,2568,1524,1525,1526,1527,1545,2930,3245,3584,4113,1402,2432,2789,3511,3634,4087,4126,4399,762,3626,4623";
     const IC_CUST = "1447,1488,1489,2674,2762,2763,2792,2907,3201,3207,3245,3584,3958,4468,4576,4113";
     const IC_VEND = "863,1027,2714,2873,3106,3328,2568";
-    // IC 分攤 / management fee journal：同一 journal 內有 60000022 或 81000059 行（PB 側 Share of expenses + mgmt fee income；子公司側 mgmt fee + Share of PBHK expenses + 年結 DN）
-    const ICJ = "EXISTS (SELECT 1 FROM transactionaccountingline x JOIN account ax ON ax.id = x.account WHERE x.transaction = t.id AND ax.acctnumber IN ('60000022','81000059'))";
+    // IC 分攤 / management fee journal：同一 journal 內有 60000022 (id 1155) 或 81000059 (id 1154) 行
+    //（PB 側 Share of expenses + mgmt fee income；子公司側 mgmt fee + Share of PBHK expenses + 年結 DN）。
+    //  三步法：先列 journal id，再以 id list 分拆 A / B（EXISTS 版本喺 SuiteQL 會 >60s）。
     const monthStart = (offset: number) => {
       const d = new Date();
       return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() - offset, 1)).toISOString().slice(0, 10);
@@ -189,15 +190,22 @@ export async function GET(req: Request) {
     const buFrom = monthStart(3);
     const buTo = monthStart(-1);
     const buWindow = `t.trandate >= TO_DATE('${buFrom}','YYYY-MM-DD') AND t.trandate < TO_DATE('${buTo}','YYYY-MM-DD')`;
-    const buPlBase = `FROM transactionaccountingline tal JOIN transaction t ON t.id = tal.transaction JOIN transactionline tl ON tl.transaction = tal.transaction AND tl.id = tal.transactionline JOIN account a ON a.id = tal.account WHERE tal.posting = 'T' AND t.posting = 'T' AND a.accttype IN ('Income','COGS','Expense','OthIncome','OthExpense') AND ${buWindow}`;
+    const buPlBase = `FROM transactionaccountingline tal JOIN transaction t ON t.id = tal.transaction JOIN transactionline tl ON tl.transaction = tal.transaction AND tl.id = tal.transactionline JOIN account a ON a.id = tal.account WHERE tal.posting = 'T' AND t.posting = 'T' AND a.accttype IN ('Income','COGS','Expense','OthIncome','OthExpense')`;
+    const icJournalIds = await sqAll(
+      token,
+      `SELECT DISTINCT tal.transaction AS tid FROM transactionaccountingline tal JOIN transaction t ON t.id = tal.transaction WHERE t.type = 'Journal' AND t.posting = 'T' AND tal.account IN (1154,1155) AND ${buWindow}`
+    );
+    const idList = icJournalIds.length ? icJournalIds.map((r) => Number(r.tid)).join(",") : "0";
     const buA = await sqAll(
       token,
-      `SELECT TO_CHAR(t.trandate,'YYYY-MM') AS ym, tl.subsidiary AS sub, NVL(tl.department,0) AS dept, tal.account AS acct, t.type AS ttype, CASE WHEN t.entity IN (${IC_ENT}) THEN t.entity ELSE 0 END AS ic_entity, SUM(NVL(tal.debit,0)) AS d, SUM(NVL(tal.credit,0)) AS c, COUNT(*) AS n ${buPlBase} AND NOT (t.type = 'Journal' AND ${ICJ}) GROUP BY TO_CHAR(t.trandate,'YYYY-MM'), tl.subsidiary, NVL(tl.department,0), tal.account, t.type, CASE WHEN t.entity IN (${IC_ENT}) THEN t.entity ELSE 0 END`
+      `SELECT TO_CHAR(t.trandate,'YYYY-MM') AS ym, tl.subsidiary AS sub, NVL(tl.department,0) AS dept, tal.account AS acct, t.type AS ttype, CASE WHEN t.entity IN (${IC_ENT}) THEN t.entity ELSE 0 END AS ic_entity, SUM(NVL(tal.debit,0)) AS d, SUM(NVL(tal.credit,0)) AS c, COUNT(*) AS n ${buPlBase} AND ${buWindow} AND t.id NOT IN (${idList}) GROUP BY TO_CHAR(t.trandate,'YYYY-MM'), tl.subsidiary, NVL(tl.department,0), tal.account, t.type, CASE WHEN t.entity IN (${IC_ENT}) THEN t.entity ELSE 0 END`
     );
-    const buB = await sqAll(
-      token,
-      `SELECT TO_CHAR(t.trandate,'YYYY-MM') AS ym, tl.subsidiary AS sub, NVL(tl.department,0) AS dept, tal.account AS acct, SUM(NVL(tal.debit,0)) AS d, SUM(NVL(tal.credit,0)) AS c, COUNT(*) AS n ${buPlBase} AND t.type = 'Journal' AND ${ICJ} GROUP BY TO_CHAR(t.trandate,'YYYY-MM'), tl.subsidiary, NVL(tl.department,0), tal.account`
-    );
+    const buB = icJournalIds.length
+      ? await sqAll(
+          token,
+          `SELECT TO_CHAR(t.trandate,'YYYY-MM') AS ym, tl.subsidiary AS sub, NVL(tl.department,0) AS dept, tal.account AS acct, SUM(NVL(tal.debit,0)) AS d, SUM(NVL(tal.credit,0)) AS c, COUNT(*) AS n ${buPlBase} AND t.id IN (${idList}) GROUP BY TO_CHAR(t.trandate,'YYYY-MM'), tl.subsidiary, NVL(tl.department,0), tal.account`
+        )
+      : [];
     await ingest("fact_bu_pl", [
       ...buA.map((r) => ({
         ym: r.ym,

@@ -28,13 +28,11 @@ JOIN account a ON a.id = tal.account
 WHERE tal.posting = 'T' AND t.posting = 'T'
   AND a.accttype IN ('Income','COGS','Expense','OthIncome','OthExpense')
   AND t.trandate >= TO_DATE(:start,'YYYY-MM-DD') AND t.trandate < TO_DATE(:end,'YYYY-MM-DD')
-  AND NOT (t.type = 'Journal' AND EXISTS (
-        SELECT 1 FROM transactionaccountingline x JOIN account ax ON ax.id = x.account
-        WHERE x.transaction = t.id AND ax.acctnumber IN ('60000022','81000059')))
+  AND t.id NOT IN (<該月 mgmt fee journal id 清單>)
 GROUP BY …   -- → ic_journal = false
 ```
 
-**Query B** — 只抽 IC 分攤 / mgmt fee journal（同上 EXISTS 條件，`t.type = 'Journal'`）→ `ic_journal = true`，
+**Query B** — 只抽 IC 分攤 / mgmt fee journal（`t.id IN (<該月 journal id 清單>)`）→ `ic_journal = true`，
 `txn_type = 'Journal'`、`ic_entity_id = 0`。
 
 **Cash（§2.3 A）** — `CustPymt` → `nexttransactionlinelink(linktype='Payment')` → invoice 行

@@ -9,8 +9,11 @@ import { BuFilterBar } from "@/components/bu-filter-bar";
 import { AllocCompareChart, BuLinesChart } from "@/components/bu-charts";
 import { Card, ExportButton, exportCsv } from "@/components/ui";
 import {
+  ALLOC_CATEGORIES,
+  ALLOC_CATEGORY_LABEL,
   CORE_BUS,
   FM_LABEL,
+  GP_SHARE_CATEGORIES,
   MGMT_LINE_LABEL,
   POOL_LABEL,
   WS_LABEL,
@@ -21,6 +24,7 @@ import {
   headcountFor,
   lastMonthWithData,
   mgmtFeeCheck,
+  nsAllocation,
   periodLabelOf,
   sharedPools,
   ymOf,
@@ -68,6 +72,9 @@ export default function SharedPage() {
   const assocAll = POOLS.reduce((a, k) => a + pools[k].assocB, 0);
   const lineKeys = (Object.keys(MGMT_LINE_LABEL) as MgmtLine[]).filter((k) => POOLS.some((pk) => Math.abs(pools[pk].byLine[k]) >= 1));
   const d = chosen.director;
+  const ns = nsAllocation(p, f.allocKey, f.netAssocFee);
+  const nsCats = ALLOC_CATEGORIES.filter((c) => Math.abs(ns.total.byCat[c]) >= 1 || Math.abs(ns.pbSide[c]) >= 1);
+  const pbGpShare = GP_SHARE_CATEGORIES.reduce((a, c) => a + ns.pbSide[c], 0);
 
   return (
     <div className="space-y-4">
@@ -185,6 +192,86 @@ export default function SharedPage() {
         <p className="text-[11px] text-ink3 mt-2">
           表內各 BU 欄用期末月份 GP%（{gs.ym ?? "—"}）示意；「合計」行係逐月按當月 GP% 計嘅實際分攤（多月期間兩者會有少量差異）。worksheet 欄：
           {gs.raw.map((r) => ` ${WS_LABEL[r.code] ?? r.code} ${r.pct}%`).join(" ·")}。PBHK Youtube 喺 NetSuite 同 Production 同一 department，已併入 Production BU。
+        </p>
+      </Card>
+
+      <Card
+        title={`NetSuite 實際分攤（會計 GP% workbook）vs BU 還原 — ${periodLabelOf(p)}`}
+        subtitle="會計「BU gross profit share」清單：NetSuite 內按 GP% 分入各公司嘅 Share of Admin / IT / Mgt、management fee，另列 DN 同 tax planning 開單。GP% 機制合計 vs 本系統 Layer 2 還原（pool C + 老闆人工）；差異 = 法定帳同管理帳嘅分攤口徑差（人頭扣減、老闆人工固定額、GP% 取數月份）。"
+        right={
+          <ExportButton
+            onClick={() =>
+              exportCsv(
+                `ns_allocation_${p.fy}.csv`,
+                ["BU", ...nsCats.map((c) => ALLOC_CATEGORY_LABEL[c]), "GP% 機制合計", "BU 還原分攤", "差異"],
+                [...ns.rows, ns.total].map((r) => [r.bu === "SHARED" ? "合計" : buLabel(r.bu), ...nsCats.map((c) => Math.round(r.byCat[c])), Math.round(r.gpShare), Math.round(r.restored), Math.round(r.diff)])
+              )
+            }
+          />
+        }
+      >
+        {!ns.hasData ? (
+          <p className="text-[12px] text-ink3">本期 workbook 冇分攤交易（清單覆蓋 2020-04 → 2026-03）。</p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="report-table w-full text-[12px]">
+              <thead>
+                <tr>
+                  <th className="text-left">BU（公司）</th>
+                  {nsCats.map((c) => (
+                    <th key={c} className={`num ${GP_SHARE_CATEGORIES.includes(c) ? "" : "text-ink2"}`}>
+                      {ALLOC_CATEGORY_LABEL[c]}
+                    </th>
+                  ))}
+                  <th className="num">GP% 機制合計</th>
+                  <th className="num">BU 還原分攤</th>
+                  <th className="num">差異</th>
+                </tr>
+              </thead>
+              <tbody>
+                {ns.rows.map((r) => (
+                  <tr key={r.bu}>
+                    <td className="text-left">
+                      {buLabel(r.bu)} <span className="text-ink3">({subName(r.sub)})</span>
+                    </td>
+                    {nsCats.map((c) => (
+                      <td key={c} className={`num ${GP_SHARE_CATEGORIES.includes(c) ? "" : "text-ink2"}`}>
+                        {Math.abs(r.byCat[c]) < 1 ? <span className="text-ink3">—</span> : hkd(r.byCat[c])}
+                      </td>
+                    ))}
+                    <td className="num font-medium">{hkd(r.gpShare)}</td>
+                    <td className="num">{hkd(r.restored)}</td>
+                    <td className={`num ${Math.abs(r.diff) > 1 ? (r.diff > 0 ? "text-serious" : "text-ok") : ""}`}>{hkd(r.diff)}</td>
+                  </tr>
+                ))}
+                <tr className="subtotal">
+                  <td className="text-left">子公司合計</td>
+                  {nsCats.map((c) => (
+                    <td key={c} className="num">
+                      {hkd(ns.total.byCat[c])}
+                    </td>
+                  ))}
+                  <td className="num">{hkd(ns.total.gpShare)}</td>
+                  <td className="num">{hkd(ns.total.restored)}</td>
+                  <td className={`num ${Math.abs(ns.total.diff) > 1 ? "text-serious" : ""}`}>{hkd(ns.total.diff)}</td>
+                </tr>
+                <tr>
+                  <td className="text-left text-ink2">PB 平台側（credit：收入 / 費用抵減）</td>
+                  {nsCats.map((c) => (
+                    <td key={c} className="num text-ink2">
+                      {Math.abs(ns.pbSide[c]) < 1 ? <span className="text-ink3">—</span> : hkd(ns.pbSide[c])}
+                    </td>
+                  ))}
+                  <td className="num text-ink2">{hkd(pbGpShare)}</td>
+                  <td className="num text-ink2">—</td>
+                  <td className={`num ${Math.abs(pbGpShare - ns.total.gpShare) > 1 ? "text-serious" : "text-ink2"}`}>{hkd(pbGpShare - ns.total.gpShare)}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        )}
+        <p className="text-[11px] text-ink3 mt-2">
+          「PB 平台側」行嘅差異 = PB 記嘅分攤收入減子公司記嘅費用（正 = 向 Go Asia / JS / Travel 等 associates 收取、或 CLS Production 側唔喺清單內）。DN 同 tax planning 開單只作參考，唔入 GP% 機制合計。
         </p>
       </Card>
 

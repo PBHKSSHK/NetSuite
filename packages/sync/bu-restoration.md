@@ -79,3 +79,21 @@ IC entity 清單 = `ic_entity_map` 全部 entity_id（2026-09-17：45 個）。�
   headcount 份額，餘額按當月 GP% 分落 BU；Management pool 100% 按 GP%；老闆人工（81000039 + Mgt dept
   81000063）唔入 pool，按 director sheet 固定金額分落 BU，worksheet 與帳面差額留喺 PB 平台。
 - 重載 seeds：`packages/sync/reference/0003_seed_allocation_reference.sql`（由 workbook 生成）。
+
+## 會計 GP% 分攤交易清單（2026-09-22，見 supabase/migrations/0004_alloc_txn_ledger.sql）
+
+- 來源：「BU gross profit share photoblog admin it mgt expenses adjustment 2020 - present.xlsx」。
+  五個 GL 分頁（PB / SS / 704 / CLS / JM）= NetSuite 內按 BU gross profit 分攤去各公司嘅交易明細
+  （2020-04 → 2026-03，10,741 行）：PB 側 credit 60000022 / 81xxx「Share of ... Expenses」/ DN 收入，
+  子公司側 debit 81000059 / 81xxx「Share of PBHK ... Expenses」/ DN 費用，另有 tax planning invoice / bill。
+  「headcount」「GP%」兩個分頁同 2 allocation.xlsx 一樣（已載入）。
+- `alloc_txn_ledger`（原始行）+ `alloc_txn_summary` view（ym × 公司 × account × type × category）。
+  category 由 account / description 推導：`MGMT_FEE`（60000022 / 81000059）、`SHARE_ADMIN` / `SHARE_IT` /
+  `SHARE_MGT`（description「Share of ...」）、`DN_PROPERTY`（租金 / 大廈管理費）、`DN_ADVERTISING`、
+  `IC_INVOICE_BILL`（invoice / bill）、`DN_OTHER`。
+- 用途：
+  1. Shared 頁「NetSuite 實際分攤 vs BU 還原」— GP% 機制（SHARE_* + MGMT_FEE）逐 BU 對比本系統
+     Layer 2 還原（pool C + 老闆人工），差異 = 法定帳 / 管理帳口徑差。
+  2. Quality 頁「會計 GP% 分攤清單覆蓋」— 每個（公司 × 月 × account）淨額 vs 本系統 IC 剔除行
+     （ic_flag ≠ EXTERNAL），差額 ≠ 0 即有分攤交易未被識別為 IC。
+- 重載 seed：`packages/sync/reference/0004_seed_alloc_txn_ledger.sql`（由 workbook 生成）。

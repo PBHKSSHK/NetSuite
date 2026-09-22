@@ -103,6 +103,17 @@ export interface ReclassRule {
   note: string | null;
 }
 
+export interface AllocTxnRow {
+  ym: string;
+  subsidiaryId: number;
+  acctNumber: string;
+  txnType: string;
+  category: string; // MGMT_FEE / SHARE_ADMIN / SHARE_IT / SHARE_MGT / DN_PROPERTY / DN_ADVERTISING / IC_INVOICE_BILL / DN_OTHER
+  debit: number;
+  credit: number;
+  lines: number;
+}
+
 export interface AccountInfo {
   id: number;
   acctnumber: string | null;
@@ -134,6 +145,8 @@ export const GP_SHARE: GpShareRow[] = [];
 export const DIRECTOR_ALLOC: DirectorAllocRow[] = [];
 export const TAX_SAVING: TaxSavingRow[] = [];
 export const RECLASS_RULES: ReclassRule[] = [];
+/** 會計「BU gross profit share」workbook：NetSuite 內按 GP% 分攤去各公司嘅交易（alloc_txn_summary view） */
+export const ALLOC_TXN: AllocTxnRow[] = [];
 export const BU_META = { loaded: false, maxYm: "", minYm: "", rows: 0 };
 
 const PAGE = 1000;
@@ -172,7 +185,7 @@ export function hydrateBu(): Promise<void> {
 }
 
 async function doHydrate(): Promise<void> {
-  const [pl, cash, mapping, icEnt, icAcc, rules, hc, overrides, accounts, groups, depts, periods, gpRows, dirRows, taxRows, reclassRows] = await Promise.all([
+  const [pl, cash, mapping, icEnt, icAcc, rules, hc, overrides, accounts, groups, depts, periods, gpRows, dirRows, taxRows, reclassRows, allocTxnRows] = await Promise.all([
     fetchAll<any>(
       "fact_bu_pl",
       "ym, subsidiary_id, department_id, account_id, txn_type, ic_entity_id, ic_journal, debit, credit, lines",
@@ -199,6 +212,7 @@ async function doHydrate(): Promise<void> {
     fetchAll<any>("director_alloc_monthly", "ym, bu_code, amount, ledger_salary, ledger_mpf", ["ym", "bu_code"]),
     fetchAll<any>("tax_saving_adjustments", "id, fy, nature, subsidiary_id, amount", ["id"]),
     fetchAll<any>("bu_reclass_rules", "id, subsidiary_id, department_id, acct_prefixes, effective_from, effective_to, bu_code, note", ["id"]),
+    fetchAll<any>("alloc_txn_summary", "ym, subsidiary_id, acct_number, txn_type, category, debit, credit, lines", ["ym", "subsidiary_id", "acct_number", "txn_type", "category"]),
   ]);
 
   // inter-co 結欠（fact_gl 內 250000xx / 35002xxx 帳戶；fact_gl 由每日 sync 維護）
@@ -332,6 +346,20 @@ async function doHydrate(): Promise<void> {
       effectiveTo: r.effective_to,
       buCode: r.bu_code,
       note: r.note,
+    });
+  }
+
+  ALLOC_TXN.length = 0;
+  for (const r of allocTxnRows) {
+    ALLOC_TXN.push({
+      ym: r.ym,
+      subsidiaryId: r.subsidiary_id,
+      acctNumber: String(r.acct_number),
+      txnType: r.txn_type,
+      category: r.category,
+      debit: num(r.debit),
+      credit: num(r.credit),
+      lines: Number(r.lines) || 0,
     });
   }
 

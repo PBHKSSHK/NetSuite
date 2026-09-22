@@ -12,6 +12,7 @@ import {
   ACCOUNTS,
   ACCOUNT_OVERRIDE,
   ALLOC_RULES,
+  ALLOC_TXN,
   BU_CASH,
   BU_MAPPING,
   BU_PL,
@@ -888,6 +889,139 @@ export function taxSavingCheck(fy: string): TaxSavingCheckRow[] {
     const e = elim.get(sub) ?? 0;
     return { sub, sheet: s, eliminated: e, diff: e - s };
   });
+}
+
+// ── 會計「BU gross profit share」workbook：NetSuite 實際分攤 vs BU 還原 ─────────
+
+export type AllocCategory = "SHARE_ADMIN" | "SHARE_IT" | "SHARE_MGT" | "MGMT_FEE" | "DN_PROPERTY" | "DN_ADVERTISING" | "IC_INVOICE_BILL" | "DN_OTHER";
+export const ALLOC_CATEGORY_LABEL: Record<AllocCategory, string> = {
+  SHARE_ADMIN: "Share of Admin / Finance / HR",
+  SHARE_IT: "Share of IT",
+  SHARE_MGT: "Share of Management",
+  MGMT_FEE: "Management fee",
+  DN_PROPERTY: "DN：租金 / 大廈管理費",
+  DN_ADVERTISING: "DN：廣告費",
+  IC_INVOICE_BILL: "IC invoice / bill（tax planning）",
+  DN_OTHER: "其他 DN",
+};
+/** GP% 分攤機制嘅類別（同 Layer 2 還原分攤可比） */
+export const GP_SHARE_CATEGORIES: AllocCategory[] = ["SHARE_ADMIN", "SHARE_IT", "SHARE_MGT", "MGMT_FEE"];
+export const ALLOC_CATEGORIES: AllocCategory[] = [...GP_SHARE_CATEGORIES, "DN_PROPERTY", "DN_ADVERTISING", "IC_INVOICE_BILL", "DN_OTHER"];
+
+/** workbook 分頁公司 → BU（SS→EPR、704→PROD、CLS→CLS、JM→JM；PB = 平台側） */
+const LEDGER_SUB_TO_BU: Record<number, BuCode> = { 2: "EPR", 8: "PROD", 5: "CLS", 7: "JM" };
+
+function inPeriod(ym: string, p: Period): boolean {
+  const { fy, fm } = fyOf(ym);
+  return fy === p.fy && p.months.includes(fm);
+}
+
+export interface NsAllocRow {
+  bu: BuCode;
+  sub: number;
+  /** 各類別：子公司帳上淨費用（debit − credit，正 = 成本） */
+  byCat: Record<AllocCategory, number>;
+  /** GP% 機制合計（SHARE_* + MGMT_FEE） */
+  gpShare: number;
+  /** 本系統 Layer 2 還原分攤（pool C + 老闆人工），正 = 成本 */
+  restored: number;
+  diff: number;
+}
+
+/**
+ * NetSuite 實際按 GP% 分攤去各公司（alloc_txn_ledger 子公司側）vs 本系統還原分攤。
+ * PB 側（subsidiary 1）為 credit，另外回傳 pbSide 供對稱檢查。
+ */
+export function nsAllocation(p: Period, key: AllocKey, netAssocFee = true): { rows: NsAllocRow[]; total: NsAllocRow; pbSide: Record<AllocCategory, number>; hasData: boolean } {
+  const empty = (): Record<AllocCategory, number> => Object.fromEntries(ALLOC_CATEGORIES.map((c) => [c, 0])) as Record<AllocCategory, number>;
+  const byBu = new Map<BuCode, Record<AllocCategory, number>>();
+  const pbSide = empty();
+  let hasData = false;
+  for (const r of ALLOC_TXN) {
+    if (!inPeriod(r.ym, p)) continue;
+    const cat = (ALLOC_CATEGORIES.includes(r.category as AllocCategory) ? r.category : "DN_OTHER") as AllocCategory;
+    hasData = true;
+    if (r.subsidiaryId === 1) {
+      pbSide[cat] += r.credit - r.debit; // PB 側收入 / 費用抵減（正）
+      continue;
+    }
+    const bu = LEDGER_SUB_TO_BU[r.subsidiaryId];
+    if (!bu) continue;
+    if (!byBu.has(bu)) byBu.set(bu, empty());
+    byBu.get(bu)![cat] += r.debit - r.credit;
+  }
+  const alloc = allocationFor(p, key, netAssocFee);
+  const rows: NsAllocRow[] = CORE_BUS.map((bu) => {
+    const byCat = byBu.get(bu) ?? empty();
+    const gpShare = GP_SHARE_CATEGORIES.reduce((a, c) => a + byCat[c], 0);
+    const restored = alloc.amount[bu] + alloc.director.byBu[bu];
+    const sub = Number(Object.keys(LEDGER_SUB_TO_BU).find((k) => LEDGER_SUB_TO_BU[Number(k)] === bu));
+    return { bu, sub, byCat, gpShare, restored, diff: gpShare - restored };
+  });
+  const total: NsAllocRow = {
+    bu: "SHARED",
+    sub: 0,
+    byCat: ALLOC_CATEGORIES.reduce((acc, c) => ({ ...acc, [c]: rows.reduce((a, r) => a + r.byCat[c], 0) }), empty()),
+    gpShare: rows.reduce((a, r) => a + r.gpShare, 0),
+    restored: rows.reduce((a, r) => a + r.restored, 0),
+    diff: 0,
+  };
+  total.diff = total.gpShare - total.restored;
+  return { rows, total, pbSide, hasData };
+}
+
+export interface LedgerCoverageRow {
+  sub: number;
+  /** workbook 淨額（debit − credit） */
+  ledger: number;
+  /** 本系統 IC 剔除行（ic_flag ≠ EXTERNAL）同 (月, account) 淨額（debit − credit） */
+  facts: number;
+  diff: number;
+  /** 有差異（|diff| ≥ 1）嘅 (月, account) 格數 */
+  cells: number;
+  worst: { ym: string; acct: string; ledger: number; facts: number }[];
+}
+
+/**
+ * 會計分攤清單覆蓋：workbook 每個 (公司, 月, account) 淨額 vs 本系統 IC 剔除行。
+ * 只比較 fact 有數據嘅月份；差異 = 未識別 IC entity / journal 規則漏網 / workbook 未列。
+ */
+export function ledgerCoverage(p: Period): LedgerCoverageRow[] {
+  const ledger = new Map<string, number>();
+  for (const r of ALLOC_TXN) {
+    if (!inPeriod(r.ym, p)) continue;
+    const k = `${r.subsidiaryId}|${r.ym}|${r.acctNumber}`;
+    ledger.set(k, (ledger.get(k) ?? 0) + r.debit - r.credit);
+  }
+  const facts = new Map<string, number>();
+  for (const l of linesIn(p, (l) => l.icFlag !== "EXTERNAL")) {
+    const acct = ACCOUNTS.get(l.acct)?.acctnumber ?? String(l.acct);
+    const k = `${l.sub}|${l.ym}|${acct}`;
+    facts.set(k, (facts.get(k) ?? 0) + -l.amount);
+  }
+  const subs = [...new Set([...ledger.keys(), ...facts.keys()].map((k) => Number(k.split("|")[0])))].sort((a, b) => a - b);
+  return subs.map((sub) => {
+    const keys = [...new Set([...ledger.keys(), ...facts.keys()].filter((k) => k.startsWith(`${sub}|`)))];
+    let lt = 0;
+    let ft = 0;
+    const diffs: { ym: string; acct: string; ledger: number; facts: number }[] = [];
+    for (const k of keys) {
+      const lv = ledger.get(k) ?? 0;
+      const fv = facts.get(k) ?? 0;
+      lt += lv;
+      ft += fv;
+      if (Math.abs(lv - fv) >= 1) {
+        const [, ym, acct] = k.split("|");
+        diffs.push({ ym, acct, ledger: lv, facts: fv });
+      }
+    }
+    diffs.sort((a, b) => Math.abs(b.ledger - b.facts) - Math.abs(a.ledger - a.facts));
+    return { sub, ledger: lt, facts: ft, diff: ft - lt, cells: diffs.length, worst: diffs.slice(0, 5) };
+  });
+}
+
+export function ledgerFys(): string[] {
+  return [...new Set(ALLOC_TXN.map((r) => fyOf(r.ym).fy))].sort();
 }
 
 export interface IcBalance {

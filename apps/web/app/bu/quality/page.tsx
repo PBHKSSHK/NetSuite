@@ -5,7 +5,7 @@
 
 import { BuFilterBar } from "@/components/bu-filter-bar";
 import { Card } from "@/components/ui";
-import { IC_FLAG_LABEL, availableFys, buLabel, icFlagSummary, icPairs, mappingCoverage, mgmtFeeCheck, passThroughLines, periodLabelOf, taxSavingCheck, taxSavingRows, untaggedByFy, untaggedBySub } from "@/lib/bu";
+import { IC_FLAG_LABEL, availableFys, buLabel, icFlagSummary, icPairs, ledgerCoverage, ledgerFys, mappingCoverage, mgmtFeeCheck, passThroughLines, periodLabelOf, taxSavingCheck, taxSavingRows, untaggedByFy, untaggedBySub } from "@/lib/bu";
 import { useBuFilters } from "@/lib/bu-filters";
 import { BU_MAPPING, IC_ENTITIES } from "@/lib/bu-store";
 import { subName } from "@/lib/bu-ui";
@@ -25,6 +25,8 @@ export default function QualityPage() {
   const ents = [...IC_ENTITIES.values()].sort((a, b) => a.entityType.localeCompare(b.entityType) || a.entityId - b.entityId);
   const taxRows = taxSavingRows(f.fy);
   const taxCheck = taxSavingCheck(f.fy);
+  const lcov = ledgerCoverage(p);
+  const lfys = ledgerFys();
 
   return (
     <div className="space-y-4">
@@ -212,6 +214,47 @@ export default function QualityPage() {
                   <td className="num text-ink2">{hkd(r.diff)}</td>
                 </tr>
               ))}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+
+      <Card
+        title={`會計 GP% 分攤清單覆蓋 — ${periodLabelOf(p)}`}
+        subtitle={`「BU gross profit share」workbook（覆蓋 FY ${lfys[0] ?? "—"} → ${lfys[lfys.length - 1] ?? "—"}）每個（公司 × 月 × account）淨額 vs 本系統 IC 剔除行（ic_flag ≠ EXTERNAL）。差額 ≠ 0 = 有分攤交易未被識別為 IC（entity 對照漏、journal 規則漏網），或本系統剔除咗 workbook 未列嘅 IC 交易（借名開單 / recharge）。`}
+      >
+        <div className="overflow-x-auto">
+          <table className="report-table w-full text-[12px]">
+            <thead>
+              <tr>
+                <th className="text-left">公司</th>
+                <th className="num">workbook 淨額（debit − credit）</th>
+                <th className="num">本系統 IC 剔除淨額</th>
+                <th className="num">差額</th>
+                <th className="num">有差異格數</th>
+                <th className="text-left">最大差異（月 · account · workbook / 本系統）</th>
+              </tr>
+            </thead>
+            <tbody>
+              {lcov.map((r) => (
+                <tr key={r.sub}>
+                  <td className="text-left">{subName(r.sub)}</td>
+                  <td className="num">{hkd(r.ledger)}</td>
+                  <td className="num">{hkd(r.facts)}</td>
+                  <td className={`num ${Math.abs(r.diff) > 1 ? "text-serious" : "text-ok"}`}>{hkd(r.diff)}</td>
+                  <td className="num">{r.cells}</td>
+                  <td className="text-left text-[11px] text-ink2">
+                    {r.worst.map((w) => `${w.ym} · ${w.acct} · ${hkdCompact(w.ledger)} / ${hkdCompact(w.facts)}`).join("；") || "—"}
+                  </td>
+                </tr>
+              ))}
+              {!lcov.length && (
+                <tr>
+                  <td colSpan={6} className="text-ink3 text-left">
+                    本期 workbook 同本系統都冇 IC 分攤交易
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>

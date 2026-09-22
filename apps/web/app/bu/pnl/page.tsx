@@ -43,7 +43,10 @@ function rowsFor(view: "mgmt" | "legal", layer: 1 | 2): RowDef[] {
     line("ADMIN"),
   ];
   if (view === "legal") rows.push(line("IC_MGMT_FEE"));
-  if (view === "mgmt" && layer === 2) rows.push({ key: "ALLOC", label: "PB 平台成本分攤 Shared cost allocation", kind: "line", get: (c) => c.allocation });
+  if (view === "mgmt" && layer === 2) {
+    rows.push({ key: "ALLOC", label: "PB 平台成本分攤（Admin / IT / Mgt）", kind: "line", get: (c) => c.allocation });
+    rows.push({ key: "DIRECTOR", label: "老闆人工（BU 報表口徑）", kind: "line", get: (c) => c.directorAlloc });
+  }
   rows.push({ key: "EBITDA", label: "EBITDA", kind: "subtotal", get: (c) => (view === "mgmt" && layer === 2 ? c.ebitdaAlloc : c.ebitda) });
   rows.push(line("DEPRECIATION"), line("OTHER_INCOME"), line("FINANCE"), line("OTHER_EXPENSE"), line("TAX"));
   rows.push({ key: "NP", label: "純利 Net Profit", kind: "subtotal", get: (c) => (view === "mgmt" && layer === 2 ? c.npAlloc : c.np) });
@@ -99,7 +102,7 @@ function PnlInner() {
         title={view === "mgmt" ? `管理帳 P&L by BU — ${periodLabelOf(p)}` : `法定 P&L by company — ${periodLabelOf(p)}`}
         subtitle={
           view === "mgmt"
-            ? `已剔除所有集團內交易（management fee journal、借名開單 invoice / bill、IC journal）；${f.layer === 2 ? `PB 平台成本按「${f.allocKey}」分攤` : "未分攤 PB 平台成本"} · HKD`
+            ? `已剔除所有集團內交易（management fee / 分攤 journal、借名開單 invoice / bill、年結 DN）；${f.layer === 2 ? `PB 平台成本按「${f.allocKey}」分攤 + 老闆人工按 worksheet 分落 BU` : "未分攤 PB 平台成本及老闆人工"} · HKD`
             : "NetSuite 原帳（含集團內交易）；「法定合計」未做 elimination · HKD"
         }
         right={<ExportButton onClick={() => exportCsv(`bu_pnl_${view}_${p.fy}.csv`, ["行項", ...columns.map((c) => c.label)], rows.map((r) => [r.label, ...columns.map((c) => Math.round(r.get(c.col)))]))} />}

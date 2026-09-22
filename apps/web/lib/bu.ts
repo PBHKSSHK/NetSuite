@@ -386,6 +386,15 @@ export interface AllocationResult {
 
 const DIRECTOR_ACCT = "81000039";
 const MPF_ACCT = "81000063";
+/** 會計 cost allocation breakdown 內 Admin pool 保留嘅收入抵減（Venue Rental Income） */
+const POOL_OFFSET_ACCTS = new Set(["60000043"]);
+/** worksheet 唔入 pool 嘅 PB 自身開支：Audit Fee、稅項（93xxxx） */
+function excludedFromPool(no: string, line: MgmtLine): boolean {
+  if (no === "81000015" || no.startsWith("93")) return true;
+  // 收入 / 直接成本（例：Mgt dept 掛嘅 Other Service Income + Cost of Advertisement）唔係 shared cost
+  if ((line === "REVENUE" || line === "DIRECT_COST") && !POOL_OFFSET_ACCTS.has(no)) return true;
+  return false;
+}
 
 /** 最近一個 ≤ ym 嘅月份（reference tables 沿用最近一次輸入） */
 function latestYm(yms: Iterable<string>, ym: string): string | undefined {
@@ -468,6 +477,8 @@ export function sharedPools(p: Period): { pools: Record<PoolCode, PoolResult>; d
         directorLedger += ledger;
         continue;
       }
+      // 對齊會計 breakdown：pass-through 收入 / 成本、audit fee、稅項留喺 PB 平台，唔分攤
+      if (excludedFromPool(no, l.mgmtLine)) continue;
       pools[pool].byLine[l.mgmtLine] += l.amount;
       monthGross[pool] += -l.amount;
     }
@@ -974,16 +985,18 @@ export interface LedgerCoverageRow {
   sub: number;
   /** workbook 淨額（debit − credit） */
   ledger: number;
-  /** 本系統 IC 剔除行（ic_flag ≠ EXTERNAL）同 (月, account) 淨額（debit − credit） */
+  /** 本系統 IC 剔除行（ic_flag ≠ EXTERNAL）喺 workbook 同一（月, account）格嘅淨額（debit − credit） */
   facts: number;
   diff: number;
   /** 有差異（|diff| ≥ 1）嘅 (月, account) 格數 */
   cells: number;
+  /** 本系統 IC 剔除但 workbook 冇列嘅（月, account）淨額（借名開單 / recharge 等） */
+  factsOnly: number;
   worst: { ym: string; acct: string; ledger: number; facts: number }[];
 }
 
 /**
- * 會計分攤清單覆蓋：workbook 每個 (公司, 月, account) 淨額 vs 本系統 IC 剔除行。
+ * 會計分攤清單覆蓋：workbook 每個 (公司, 月, account) 淨額 vs 本系統 IC 剔除行（同一格）。
  * 只比較 fact 有數據嘅月份；差異 = 未識別 IC entity / journal 規則漏網 / workbook 未列。
  */
 export function ledgerCoverage(p: Period): LedgerCoverageRow[] {
@@ -993,20 +1006,21 @@ export function ledgerCoverage(p: Period): LedgerCoverageRow[] {
     const k = `${r.subsidiaryId}|${r.ym}|${r.acctNumber}`;
     ledger.set(k, (ledger.get(k) ?? 0) + r.debit - r.credit);
   }
+  if (!ledger.size) return [];
   const facts = new Map<string, number>();
   for (const l of linesIn(p, (l) => l.icFlag !== "EXTERNAL")) {
     const acct = ACCOUNTS.get(l.acct)?.acctnumber ?? String(l.acct);
     const k = `${l.sub}|${l.ym}|${acct}`;
     facts.set(k, (facts.get(k) ?? 0) + -l.amount);
   }
-  const subs = [...new Set([...ledger.keys(), ...facts.keys()].map((k) => Number(k.split("|")[0])))].sort((a, b) => a - b);
+  const subs = [...new Set([...ledger.keys()].map((k) => Number(k.split("|")[0])))].sort((a, b) => a - b);
   return subs.map((sub) => {
-    const keys = [...new Set([...ledger.keys(), ...facts.keys()].filter((k) => k.startsWith(`${sub}|`)))];
     let lt = 0;
     let ft = 0;
+    let factsOnly = 0;
     const diffs: { ym: string; acct: string; ledger: number; facts: number }[] = [];
-    for (const k of keys) {
-      const lv = ledger.get(k) ?? 0;
+    for (const [k, lv] of ledger) {
+      if (!k.startsWith(`${sub}|`)) continue;
       const fv = facts.get(k) ?? 0;
       lt += lv;
       ft += fv;
@@ -1015,8 +1029,9 @@ export function ledgerCoverage(p: Period): LedgerCoverageRow[] {
         diffs.push({ ym, acct, ledger: lv, facts: fv });
       }
     }
+    for (const [k, fv] of facts) if (k.startsWith(`${sub}|`) && !ledger.has(k)) factsOnly += fv;
     diffs.sort((a, b) => Math.abs(b.ledger - b.facts) - Math.abs(a.ledger - a.facts));
-    return { sub, ledger: lt, facts: ft, diff: ft - lt, cells: diffs.length, worst: diffs.slice(0, 5) };
+    return { sub, ledger: lt, facts: ft, diff: ft - lt, cells: diffs.length, factsOnly, worst: diffs.slice(0, 5) };
   });
 }
 

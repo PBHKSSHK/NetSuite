@@ -190,7 +190,7 @@ export default function SharedPage() {
           </table>
         </div>
         <p className="text-[11px] text-ink3 mt-2">
-          表內各 BU 欄用期末月份 GP%（{gs.ym ?? "—"}）示意；「合計」行係逐月按當月 GP% 計嘅實際分攤（多月期間兩者會有少量差異）。worksheet 欄：
+          Pool 組成對齊會計 cost allocation breakdown：Mgt dept 掛嘅 pass-through 收入 / 直接成本、Audit Fee、稅項留喺 PB 平台唔分攤；Venue Rental Income（外部部分）抵減 Admin pool。會計 breakdown 另將 DN 俾集團公司嘅 venue rental 收入（IC，約每年 1.3M）淨入 Admin pool、子公司則直接承擔 DN 租金——本系統則將 DN 兩邊剔除、全額租金按 GP% 分攤，Admin pool 因此較 breakdown 大。表內各 BU 欄用期末月份 GP%（{gs.ym ?? "—"}）示意；「合計」行係逐月按當月 GP% 計嘅實際分攤（多月期間兩者會有少量差異）。worksheet 欄：
           {gs.raw.map((r) => ` ${WS_LABEL[r.code] ?? r.code} ${r.pct}%`).join(" ·")}。PBHK Youtube 喺 NetSuite 同 Production 同一 department，已併入 Production BU。
         </p>
       </Card>

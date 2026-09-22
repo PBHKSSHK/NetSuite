@@ -5,7 +5,7 @@
 app（`apps/web/lib/bu.ts`）按 reference tables 即時推算，所以改 `bu_mapping` /
 `ic_entity_map` 唔使重跑 ETL。
 
-## 首次全量（2026-09-16 進行中）
+## 首次全量（2026-09-16 v1；2026-09-22 v2 IC journal 規則全量重載完成，fact_bu_pl_v1 保留備查）
 
 載入狀態：2021-04 → 2023-04（2023-04 缺 Query B）、2024-01 → 2026-03（2026-03 缺 Query B）。
 **待補**：2023-05 → 2023-12、2026-04 → 2026-09、2023-04 / 2026-03 嘅 Query B（NetSuite MCP 登入
@@ -78,6 +78,13 @@ IC entity 清單 = `ic_entity_map` 全部 entity_id（2026-09-17：45 個）。�
 - 分攤引擎（`lib/bu.ts` `allocationFor(key='workbook')`）：Admin / IT pool 先扣 (JS + Go Asia) ÷ 全體
   headcount 份額，餘額按當月 GP% 分落 BU；Management pool 100% 按 GP%；老闆人工（81000039 + Mgt dept
   81000063）唔入 pool，按 director sheet 固定金額分落 BU，worksheet 與帳面差額留喺 PB 平台。
+- Pool 組成（2026-09-22 對齊 cost allocation breakdown）：PB 平台 dept 6 / 11 / 9 外部行，但剔除
+  (i) 老闆人工 81000039 + Mgt dept MPF 81000063（另按 director sheet），(ii) 收入 / 直接成本行
+  （例：Mgt dept 掛嘅 Other Service Income + Cost of Advertisement pass-through），Venue Rental Income
+  60000043 例外保留作 Admin pool 抵減，(iii) Audit Fee 81000015 同稅項 93xxxx。以 2025-03 對數：
+  IT 47,745.53、Mgt 72,233.40（+ 老闆人工 166,000 = 238,233.40）同 breakdown 一仙不差；Admin 293,797.86
+  vs breakdown 194,279.52，差額 = breakdown 將 DN 俾集團公司嘅 venue rental 收入（IC 90,274.60）淨入 pool
+  + IC sundry credit 12,000 − 人工 2,756.26（breakdown 手工數）。本系統將 DN 兩邊剔除、全額租金按 GP% 分。
 - 重載 seeds：`packages/sync/reference/0003_seed_allocation_reference.sql`（由 workbook 生成）。
 
 ## 會計 GP% 分攤交易清單（2026-09-22，見 supabase/migrations/0004_alloc_txn_ledger.sql）

@@ -221,7 +221,7 @@ export default function QualityPage() {
 
       <Card
         title={`會計 GP% 分攤清單覆蓋 — ${periodLabelOf(p)}`}
-        subtitle={`「BU gross profit share」workbook（覆蓋 FY ${lfys[0] ?? "—"} → ${lfys[lfys.length - 1] ?? "—"}）每個（公司 × 月 × account）淨額 vs 本系統 IC 剔除行（ic_flag ≠ EXTERNAL）。差額 ≠ 0 = 有分攤交易未被識別為 IC（entity 對照漏、journal 規則漏網），或本系統剔除咗 workbook 未列嘅 IC 交易（借名開單 / recharge）。`}
+        subtitle={`「BU gross profit share」workbook（覆蓋 FY ${lfys[0] ?? "—"} → ${lfys[lfys.length - 1] ?? "—"}）每個（公司 × 月 × account）淨額 vs 本系統 IC 剔除行（ic_flag ≠ EXTERNAL）。差額 ≠ 0 = 有分攤交易未被識別為 IC（entity 對照漏、journal 規則漏網）或同一 account 內另有 IC 交易；「本系統另剔除」= workbook 未列但本系統剔除嘅 IC 交易（借名開單 / recharge）。`}
       >
         <div className="overflow-x-auto">
           <table className="report-table w-full text-[12px]">
@@ -232,6 +232,7 @@ export default function QualityPage() {
                 <th className="num">本系統 IC 剔除淨額</th>
                 <th className="num">差額</th>
                 <th className="num">有差異格數</th>
+                <th className="num">本系統另剔除（workbook 未列）</th>
                 <th className="text-left">最大差異（月 · account · workbook / 本系統）</th>
               </tr>
             </thead>
@@ -243,6 +244,7 @@ export default function QualityPage() {
                   <td className="num">{hkd(r.facts)}</td>
                   <td className={`num ${Math.abs(r.diff) > 1 ? "text-serious" : "text-ok"}`}>{hkd(r.diff)}</td>
                   <td className="num">{r.cells}</td>
+                  <td className="num text-ink2">{hkd(r.factsOnly)}</td>
                   <td className="text-left text-[11px] text-ink2">
                     {r.worst.map((w) => `${w.ym} · ${w.acct} · ${hkdCompact(w.ledger)} / ${hkdCompact(w.facts)}`).join("；") || "—"}
                   </td>
@@ -250,8 +252,8 @@ export default function QualityPage() {
               ))}
               {!lcov.length && (
                 <tr>
-                  <td colSpan={6} className="text-ink3 text-left">
-                    本期 workbook 同本系統都冇 IC 分攤交易
+                  <td colSpan={7} className="text-ink3 text-left">
+                    本期 workbook 冇分攤交易（清單覆蓋 2020-04 → 2026-03）
                   </td>
                 </tr>
               )}

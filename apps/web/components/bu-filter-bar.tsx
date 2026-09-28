@@ -66,7 +66,7 @@ export function BuFilterBar({ showLayer = false, showAlloc = false }: { showLaye
           </select>
           <label className="flex items-center gap-1.5 text-[12px] text-ink2 cursor-pointer select-none">
             <input type="checkbox" checked={f.netAssocFee} onChange={(e) => f.setNetAssocFee(e.target.checked)} className="accent-[var(--accent)]" />
-            扣 Go Asia / JS admin fee
+            Admin / IT 扣 Go Asia + JS 人頭份額
           </label>
         </>
       )}

@@ -28,6 +28,9 @@ IC 配對、mgmt fee 對稱、對照表）。
 - ETL / 增量：`packages/sync/bu-restoration.md`；blueprint 全文 `docs/bu-restoration-blueprint.md`。
 - 704 成立前嘅 Production 業務坐喺 PBHK `Production` dept（bu_mapping 已映射 → Production BU），
   所以 FY2021/22 起可以連續睇；FY22/23 前 PBHK 未標 department 比例高，Data quality 頁有標示。
+- 分攤規則跟會計 worksheet（`2 allocation.xlsx` + 五年 `PB_cost_allocation_breakdown`）：Admin / IT 扣
+  JS + Go Asia 人頭份額後按月度 GP% 分落 BU、Management 100% GP%、老闆人工按 director sheet 固定金額；
+  年結 tax planning 開單（`tax_saving_adjustments`）於 Data quality 頁同系統剔除數對照。
 
 ## Repo 結構（§10.1）
 

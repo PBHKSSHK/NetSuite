@@ -45,9 +45,22 @@ IC entity 清單 = `ic_entity_map` 全部 entity_id（2026-09-17：45 個）。�
 ## 每日增量
 
 `apps/web/app/api/cron/sync/route.ts` 每次重抽最近 4 個月（含本月）嘅 fact_bu_pl / fact_bu_cash，
-經 Supabase `ingest` edge function upsert（ALLOWED 已加兩張表）。前提：Vercel env
-`NS_ACCOUNT / NS_CLIENT_ID / NS_CERT_ID / NS_PRIVATE_KEY / INGEST_SECRET / CRON_SECRET` 已設定
-（截至 2026-09-16 `sync_log` 顯示 daily-sync-edge 因 `NS_ACCOUNT` 未設而失敗——要先補 secrets）。
+經 Supabase `ingest` edge function upsert（ALLOWED 已加兩張表）。排程喺 `apps/web/vercel.json`
+`crons`（每日 23:15 UTC，即香港 07:15；Vercel 會自動帶 `Authorization: Bearer $CRON_SECRET`）。
+前提：Vercel env `NS_ACCOUNT / NS_CLIENT_ID / NS_CERT_ID / NS_PRIVATE_KEY / INGEST_SECRET / CRON_SECRET`
+已設定。
+
+Supabase 側 pg_cron `daily-netsuite-sync`（22:45 UTC）打 edge function `sync-netsuite`，負責
+fact_gl / AR / AP / collections / disbursements / bank；secrets 同名，放喺 Edge Function Secrets。
+2026-09-28 起兩邊 secrets 已補齊（NetSuite M2M mapping 用 Administrator role；`Claude MCP Integration`
+role 冇 transaction SuiteQL 權限，會 400 "role does not have permission"），`sync_log` id 52 首次 ok。
+手動觸發 / 檢查：
+
+```
+curl -X POST https://nlymvuwafgiudbqsyfem.supabase.co/functions/v1/sync-netsuite -H "x-ingest-secret: $INGEST_SECRET" -d '{}'
+curl -H "Authorization: Bearer $CRON_SECRET" https://pbhk-group-dashboard-pbhk.vercel.app/api/cron/sync
+select id, job, started_at, status, left(error,200) from sync_log order by id desc limit 5;
+```
 
 ## 對數（Phase 1 驗證）
 

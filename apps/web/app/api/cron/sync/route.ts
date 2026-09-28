@@ -80,8 +80,10 @@ async function ingest(table: string, rows: object[], mode?: "replace"): Promise<
   }
 }
 
+// 日期一律喺 SuiteQL 用 TO_CHAR 定格式；呢度只兜底處理 MM/DD/YYYY（NetSuite 原生輸出跟用戶偏好，可能係 DD/MM/YYYY）
 const mdy = (s: string | null): string | null => {
   if (!s) return null;
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
   const [m, d, y] = s.split("/").map(Number);
   return `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
 };
@@ -119,7 +121,7 @@ export async function GET(req: Request) {
     ] as const) {
       const rows = await sqAll(
         token,
-        `SELECT t.id, t.tranid, t.trandate, t.duedate, t.entity, tl.subsidiary AS sub, t.foreignamountunpaid AS amt, NVL(t.exchangerate, 1) AS fx, t.currency FROM transaction t JOIN transactionline tl ON tl.transaction = t.id AND tl.mainline = 'T' WHERE t.type IN (${types}) AND NVL(t.foreignamountunpaid, 0) <> 0`
+        `SELECT t.id, t.tranid, TO_CHAR(t.trandate,'YYYY-MM-DD') AS trandate, TO_CHAR(t.duedate,'YYYY-MM-DD') AS duedate, t.entity, tl.subsidiary AS sub, t.foreignamountunpaid AS amt, NVL(t.exchangerate, 1) AS fx, t.currency FROM transaction t JOIN transactionline tl ON tl.transaction = t.id AND tl.mainline = 'T' WHERE t.type IN (${types}) AND NVL(t.foreignamountunpaid, 0) <> 0`
       );
       await ingest(
         table,

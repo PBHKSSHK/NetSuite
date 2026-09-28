@@ -89,7 +89,10 @@ const mdy = (s: string | null): string | null => {
 };
 
 export async function GET(req: Request) {
-  if (process.env.CRON_SECRET && req.headers.get("authorization") !== `Bearer ${process.env.CRON_SECRET}`) {
+  // 兩邊都 trim：Vercel env 貼上時容易帶尾隨換行 / 空格，逐字比對會永遠 401
+  const expected = (process.env.CRON_SECRET ?? "").trim();
+  const presented = (req.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "").trim();
+  if (expected && presented !== expected) {
     return new Response("unauthorized", { status: 401 });
   }
   const started = new Date().toISOString();

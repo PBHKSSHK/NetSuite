@@ -244,9 +244,12 @@ export async function GET(req: Request) {
     const buTo = qFrom ? nextMonthStart(qTo ?? qFrom) : monthStart(-1);
     const buYms = ymsBetween(buFrom, buTo);
     const buWindow = `t.trandate >= TO_DATE('${buFrom}','YYYY-MM-DD') AND t.trandate < TO_DATE('${buTo}','YYYY-MM-DD')`;
-    // class：行 class 為先，冇就用主行（mainline）class；journal 冇主行 → 0
-    const buPlBase = `FROM transactionaccountingline tal JOIN transaction t ON t.id = tal.transaction JOIN transactionline tl ON tl.transaction = tal.transaction AND tl.id = tal.transactionline LEFT JOIN transactionline tlm ON tlm.transaction = t.id AND tlm.mainline = 'T' JOIN account a ON a.id = tal.account WHERE tal.posting = 'T' AND t.posting = 'T' AND a.accttype IN ('Income','COGS','Expense','OthIncome','OthExpense')`;
-    const clsExpr = "COALESCE(tl.class, tlm.class, 0)";
+    // class：行 class 為先，冇就用單頭（mainline）class。
+    //   注意：Journal 每一行 mainline 都係 'T'，直接 LEFT JOIN transactionline mainline 會將 journal 行 fan-out N 倍
+    //  （2026-09-29 首次 backfill 踩過），所以單頭 class 用「每張交易一行」嘅 derived table，並排除 Journal。
+    const hdrClass = `LEFT JOIN (SELECT m.transaction AS tid, MAX(m.class) AS cls FROM transactionline m JOIN transaction tm ON tm.id = m.transaction WHERE m.mainline = 'T' AND tm.type <> 'Journal' AND tm.trandate >= TO_DATE('${buFrom}','YYYY-MM-DD') AND tm.trandate < TO_DATE('${buTo}','YYYY-MM-DD') GROUP BY m.transaction) tlm ON tlm.tid = t.id`;
+    const buPlBase = `FROM transactionaccountingline tal JOIN transaction t ON t.id = tal.transaction JOIN transactionline tl ON tl.transaction = tal.transaction AND tl.id = tal.transactionline ${hdrClass} JOIN account a ON a.id = tal.account WHERE tal.posting = 'T' AND t.posting = 'T' AND a.accttype IN ('Income','COGS','Expense','OthIncome','OthExpense')`;
+    const clsExpr = "COALESCE(tl.class, tlm.cls, 0)";
     const icJournalIds = await sqAll(
       token,
       `SELECT DISTINCT tal.transaction AS tid FROM transactionaccountingline tal JOIN transaction t ON t.id = tal.transaction WHERE t.type = 'Journal' AND t.posting = 'T' AND tal.account IN (1154,1155) AND ${buWindow}`

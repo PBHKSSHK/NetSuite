@@ -57,6 +57,8 @@ app 內 `buFor()` 優先次序：(dept, class) 精確 > (dept, 任何 class) > �
   sub 2 SSHK dept 2 冇 YouTube class 行。`bu_mapping` id 26 / 27：(1,2,13) 及 (2,2,13) → YT。
 - 對數：66 個月逐月 lines / debit / credit 對比 backfill 前 snapshot，核心公司（sub 1/2/5/7/8）一致；
   差異全部來自 sub 6 Go Asia（新 Administrator role 先睇到，落 OTHER BU）同近月 NetSuite 真實改動。
+- SSHK Commercial Team（dept 13，會計 worksheet `EPR_COMM`「SSHK Comm」欄）由 ePR 拆出為 COMM BU：
+  `bu_mapping` (2,13) 及 (1,13) → COMM；sub 2 數據 2021-04 → 2023-08（1,021 行）。
 - 教訓：Journal 每行 `mainline = 'T'`，header class fallback 唔可以直接 LEFT JOIN mainline 行（會 fan-out），
   要用 per-transaction derived table 並排除 Journal。
 

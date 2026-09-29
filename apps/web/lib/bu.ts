@@ -29,10 +29,11 @@ import {
 
 // ── BU / 行次定義 ────────────────────────────────────────────────────────────
 
-export type BuCode = "EPR" | "PROD" | "YT" | "JM" | "CLS" | "SHARED" | "OTHER";
+export type BuCode = "EPR" | "COMM" | "PROD" | "YT" | "JM" | "CLS" | "SHARED" | "OTHER";
 
 export const BU_LIST: { code: BuCode; label: string; en: string }[] = [
   { code: "EPR", label: "ePR", en: "ePR" },
+  { code: "COMM", label: "SSHK Comm", en: "SSHK Commercial Team" },
   { code: "PROD", label: "Production", en: "Production" },
   { code: "YT", label: "YouTube", en: "Production · class YouTube" },
   { code: "JM", label: "JM", en: "Jervois M" },
@@ -40,8 +41,8 @@ export const BU_LIST: { code: BuCode; label: string; en: string }[] = [
   { code: "SHARED", label: "PB 平台（待分攤）", en: "PB-Platform / Shared" },
   { code: "OTHER", label: "其他", en: "Other" },
 ];
-export const CORE_BUS: BuCode[] = ["EPR", "PROD", "YT", "JM", "CLS"];
-export const BU_ORDER: BuCode[] = ["EPR", "PROD", "YT", "JM", "CLS", "SHARED", "OTHER"];
+export const CORE_BUS: BuCode[] = ["EPR", "COMM", "PROD", "YT", "JM", "CLS"];
+export const BU_ORDER: BuCode[] = ["EPR", "COMM", "PROD", "YT", "JM", "CLS", "SHARED", "OTHER"];
 
 export function buLabel(code: string): string {
   return BU_LIST.find((b) => b.code === code)?.label ?? code;
@@ -393,7 +394,7 @@ export const WS_TO_BU: Record<string, BuCode | "ASSOC"> = {
   PROD_704: "PROD",
   YT: "YT",
   EPR: "EPR",
-  EPR_COMM: "EPR",
+  EPR_COMM: "COMM",
   CLS: "CLS",
   JM: "JM",
   ASSOC_JS: "ASSOC",

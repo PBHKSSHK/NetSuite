@@ -42,6 +42,25 @@ GROUP BY …   -- → ic_journal = false
 IC entity 清單 = `ic_entity_map` 全部 entity_id（2026-09-17：45 個）。新增集團 entity 時要同步更新
 `apps/web/app/api/cron/sync/route.ts` 內嘅 `IC_ENT` 常數並補抽受影響月份。
 
+## class 維度（2026-09-29）
+
+Social Strategy（sub 2）嘅 Production department 用 NetSuite **class**「YouTube」標記 YouTube 工作，
+BU 管理帳要分開兩條數。fact_bu_pl / fact_bu_cash 加 `class_id`（入 primary key；0 = 未標），
+取值 `COALESCE(行 class, 主行 class, 0)`；`dim_class` 由 `classification` 表同步；
+`bu_mapping.class_id`（null = 該 department 所有 class）令 `(sub 2, dept 2, class YouTube) → YT`，
+app 內 `buFor()` 優先次序：(dept, class) 精確 > (dept, 任何 class) > 公司預設。
+會計 worksheet 欄 `YT`（GP% / headcount 2021-04 → 2024-03）對應 YT BU。
+
+**Backfill / 重抽**（route 支援月份窗口；一律 `replace_ym` 先清該月再寫）：
+
+```
+curl -H "Authorization: Bearer $CRON_SECRET" "https://pbhk-group-dashboard-pbhk.vercel.app/api/cron/sync?from=2026-04&to=2026-09"
+curl -H "Authorization: Bearer $CRON_SECRET" "https://pbhk-group-dashboard-pbhk.vercel.app/api/cron/sync?only=bu"
+select job, started_at, status, error from sync_log where job = 'bu-backfill' order by id desc;
+```
+
+每個 6 個月窗口約 60–120 秒（maxDuration 300）。改 `IC_ENT` / class 規則 / 分拆邏輯後照樣逐窗口重抽。
+
 ## 每日增量
 
 `apps/web/app/api/cron/sync/route.ts` 每次重抽最近 4 個月（含本月）嘅 fact_bu_pl / fact_bu_cash，

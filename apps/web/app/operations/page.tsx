@@ -27,7 +27,7 @@ import {
   utilisationTrend,
 } from "@/lib/agency";
 import { hkd, hkdCompact } from "@/lib/format";
-import { ACTUAL_MONTHS, fyMonthLabel } from "@/lib/fy";
+import { ACTUAL_MONTHS, fyMonthLabel, ytdHeading } from "@/lib/fy";
 import { usePalette } from "@/lib/theme";
 
 const YTD = Array.from({ length: ACTUAL_MONTHS }, (_, i) => i + 1);
@@ -223,7 +223,7 @@ export default function OperationsPage() {
   return (
     <div className="space-y-4">
       <h1 className="text-lg font-semibold">
-        營運 Operations <span className="text-[12px] font-normal text-ink3">FY2026/27 YTD（4–7 月）· HKD</span>
+        營運 Operations <span className="text-[12px] font-normal text-ink3">{ytdHeading()} · HKD</span>
       </h1>
 
       {/* 1 ── Agency 三大比率 */}

@@ -20,7 +20,7 @@ import { paymentBehaviour, pitchStats } from "@/lib/agency";
 import { chaseList } from "@/lib/advisor";
 import { subsidiaryById } from "@/lib/dims";
 import { hkd, hkdCompact } from "@/lib/format";
-import { ACTUAL_MONTHS, CURRENT_FY_START_YEAR, fyMonthFull, fyMonthLabel } from "@/lib/fy";
+import { ACTUAL_MONTHS, CURRENT_FY_START_YEAR, fyMonthFull, fyMonthLabel, ytdHeading } from "@/lib/fy";
 import { AR_BY_CUSTOMER, CLIENT_INFO, CLIENT_REVENUE } from "@/lib/store";
 import { usePalette } from "@/lib/theme";
 
@@ -28,10 +28,10 @@ const AXIS_FONT = { fontSize: 11 };
 
 // ── 真數 helpers（讀 hydration store — DataBoot 保證 hydrate 完先 render）────
 
-/** FY2026/27 YTD 窗口 = 2026-04..2026-07（2026-08 未關帳唔計） */
+/** 現行 FY YTD 窗口 = 4 月..當前進行中嘅月份（跟 ACTUAL_MONTHS） */
 const YTD_START = fyMonthFull(1);
 const YTD_END = fyMonthFull(ACTUAL_MONTHS);
-/** FY2025/26 全年 = 2025-04..2026-03 */
+/** 對上 FY 全年（4 月..3 月） */
 const PRIOR_START = fyMonthFull(1, CURRENT_FY_START_YEAR - 1);
 const PRIOR_END = fyMonthFull(12, CURRENT_FY_START_YEAR - 1);
 
@@ -337,7 +337,7 @@ export default function ClientsPage() {
     <div className="space-y-4">
       <div>
         <h1 className="text-lg font-semibold">客戶 Clients</h1>
-        <p className="text-[12px] text-ink3">客戶收入・留存・AR Alert・Pitch 效益 · FY2026/27 YTD（4–7 月）· HKD</p>
+        <p className="text-[12px] text-ink3">客戶收入・留存・AR Alert・Pitch 效益 · {ytdHeading()} · HKD</p>
       </div>
 
       <div className="text-[11px] text-ink2 bg-warn/10 border border-warn/30 rounded-lg px-3 py-2">

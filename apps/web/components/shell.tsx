@@ -1,17 +1,18 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { DATA_AS_OF, IS_DEMO } from "@/lib/demo";
-import { DATA_MODE } from "@/lib/store";
+import { IS_DEMO } from "@/lib/demo";
+import { CURRENT_FY } from "@/lib/fy";
+import { DATA_AS_OF, DATA_MODE, subscribeData } from "@/lib/store";
 import { supabase } from "@/lib/supabase";
 
 const NAV = [
-  { href: "/", label: "集團總覽", en: "Overview" },
-  { href: "/bu", label: "BU 還原", en: "BU P&L / Cash", section: true },
-  { href: "/pnl", label: "損益表", en: "P&L" },
-  { href: "/balance-sheet", label: "資產負債表", en: "Balance Sheet" },
+  { href: "/", label: "集團總覽（法定）", en: "Overview" },
+  { href: "/bu", label: "BU 管理帳", en: "BU P&L / Cash", section: true },
+  { href: "/pnl", label: "損益表（法定）", en: "P&L" },
+  { href: "/balance-sheet", label: "資產負債表（法定）", en: "Balance Sheet" },
   { href: "/budget", label: "預算", en: "Budgeting" },
   { href: "/cashflow", label: "現金流", en: "Cashflow" },
   { href: "/cost-center", label: "成本中心", en: "Cost Center" },
@@ -27,6 +28,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const [auth, setAuth] = useState<AuthState>("loading");
+  const dataAsOf = useSyncExternalStore(subscribeData, () => DATA_AS_OF.value, () => "");
 
   useEffect(() => {
     let mounted = true;
@@ -80,7 +82,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
       <aside className="lg:w-56 shrink-0 border-b lg:border-b-0 lg:border-r border-grid bg-surface">
         <div className="px-4 py-4 border-b border-grid">
           <div className="text-sm font-semibold leading-tight">集團管理 Dashboard</div>
-          <div className="text-[11px] text-ink3 mt-0.5">NetSuite · FY2026/27（4–3 月財年）</div>
+          <div className="text-[11px] text-ink3 mt-0.5">NetSuite · {CURRENT_FY}（4–3 月財年）</div>
         </div>
         <nav className="flex lg:flex-col overflow-x-auto px-2 py-2 gap-1">
           {NAV.map((item) => {
@@ -102,9 +104,9 @@ export function Shell({ children }: { children: React.ReactNode }) {
           })}
         </nav>
         <div className="hidden lg:block px-4 py-3 mt-2 border-t border-grid text-[11px] text-ink3 leading-relaxed">
-          數據截至 {DATA_AS_OF}
+          數據截至 {dataAsOf || "同步中…"}
           <br />
-          Blueprint v1.0 + BU 還原 v0.1
+          Blueprint v1.0 + BU 管理帳 v0.3
           <div className="mt-2">
             <button
               onClick={handleSignOut}

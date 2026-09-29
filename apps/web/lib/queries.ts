@@ -15,7 +15,7 @@ import {
   untaggedShare,
 } from "./demo";
 import { DEPARTMENTS, OPERATING_SUBS, PL_GROUPS, SUBSIDIARIES, UNTAGGED_DEPT_ID } from "./dims";
-import { ACTUAL_MONTHS, CURRENT_FY, PRIOR_FY, TODAY } from "./fy";
+import { ACTUAL_MONTHS, CURRENT_FY, PRIOR_FY, TODAY, annualisationMonths } from "./fy";
 import type { OpenItem } from "./types";
 
 // ── generic fact summation ───────────────────────────────────────────────────
@@ -532,7 +532,7 @@ export function kpiAgi(subSel: number, months: number[]) {
     agiMargin: svc ? agi / svc : 0,
     staffToAgi: agi ? staff / agi : 0,
     revenue: rev,
-    revenuePerHeadAnnualised: (rev / months.length) * 12 / GROUP_HEADCOUNT,
+    revenuePerHeadAnnualised: (rev / annualisationMonths(months)) * 12 / GROUP_HEADCOUNT,
   };
 }
 

@@ -114,6 +114,52 @@ export const FM_LABEL = ["4月", "5月", "6月", "7月", "8月", "9月", "10月"
 export interface Period {
   fy: string;
   months: number[]; // FY months 1–12
+  /**
+   * 累積模式：明確列出所有 'YYYY-MM'（可跨財年，由最早有數據嘅月份到揀選月份）。
+   * 有 yms 時，數據篩選以 yms 為準；fy / months 只保留俾 per-FY 圖表同月份選擇器用。
+   */
+  yms?: string[];
+}
+
+/** 期間內所有 'YYYY-MM'（跨財年累積 or 單一財年月份） */
+export function periodYms(p: Period): string[] {
+  return p.yms ?? p.months.map((m) => ymOf(p.fy, m));
+}
+
+const ymSetCache = new WeakMap<Period, Set<string>>();
+/** periodYms 嘅 Set 版本（按 Period 物件快取；累積模式逐行判斷唔使每次重建） */
+export function periodYmSet(p: Period): Set<string> {
+  let s = ymSetCache.get(p);
+  if (!s) {
+    s = new Set(periodYms(p));
+    ymSetCache.set(p, s);
+  }
+  return s;
+}
+
+/** 單一月份嘅 Period（內部逐月計算用） */
+export function monthPeriod(ym: string): Period {
+  const { fy, fm } = fyOf(ym);
+  return { fy, months: [fm] };
+}
+
+/** from..to（含）逐月 'YYYY-MM' 清單 */
+export function ymRange(from: string, to: string): string[] {
+  const out: string[] = [];
+  if (!from || !to || from > to) return out;
+  let y = Number(from.slice(0, 4));
+  let m = Number(from.slice(5, 7));
+  for (let guard = 0; guard < 600; guard++) {
+    const ym = `${y}-${String(m).padStart(2, "0")}`;
+    out.push(ym);
+    if (ym >= to) break;
+    m += 1;
+    if (m > 12) {
+      m = 1;
+      y += 1;
+    }
+  }
+  return out;
 }
 
 // ── 行分類 ───────────────────────────────────────────────────────────────────
@@ -275,11 +321,15 @@ export function lastMonthWithData(fy: string): number {
 }
 
 export function linesIn(p: Period, extra?: (l: Line) => boolean): Line[] {
-  const ms = new Set(p.months);
-  return allLines().filter((l) => l.fy === p.fy && ms.has(l.fm) && (!extra || extra(l)));
+  const yms = periodYmSet(p);
+  return allLines().filter((l) => yms.has(l.ym) && (!extra || extra(l)));
 }
 
 export function periodLabelOf(p: Period): string {
+  if (p.yms) {
+    if (!p.yms.length) return "累積（未有數據）";
+    return `累積 ${p.yms[0]} – ${p.yms[p.yms.length - 1]}（${p.yms.length} 個月）`;
+  }
   if (p.months.length === 12) return `${p.fy} 全年`;
   if (p.months.length === 1) return `${p.fy} ${FM_LABEL[p.months[0] - 1]}`;
   return `${p.fy} ${FM_LABEL[p.months[0] - 1]}–${FM_LABEL[p.months[p.months.length - 1] - 1]}`;
@@ -442,7 +492,7 @@ export function headcountFor(ym: string): { byBu: Record<BuCode, number>; assoc:
 
 /** 老闆人工（BU 報表口徑，worksheet「director」）— 期間合計 */
 export function directorFor(p: Period): DirectorResult {
-  const yms = new Set(p.months.map((m) => ymOf(p.fy, m)));
+  const yms = new Set(periodYms(p));
   const byBu = Object.fromEntries(BU_ORDER.map((b) => [b, 0])) as Record<BuCode, number>;
   let sheetTotal = 0;
   const ledgerByYm = new Map<string, number>();
@@ -462,12 +512,11 @@ export function sharedPools(p: Period): { pools: Record<PoolCode, PoolResult>; d
   const pools = Object.fromEntries((Object.keys(POOL_DEPT) as PoolCode[]).map((k) => [k, { gross: 0, assocB: 0, net: 0, byLine: emptyCol().lines }])) as Record<PoolCode, PoolResult>;
   let directorLedger = 0;
   // 逐月：Admin / IT 扣 associates 人頭份額
-  for (const m of p.months) {
-    const ym = ymOf(p.fy, m);
+  for (const ym of periodYms(p)) {
     const hc = headcountFor(ym);
     const assocShare = hc.total ? hc.assoc / hc.total : 0;
     const monthGross: Record<PoolCode, number> = { ADMIN: 0, IT: 0, MGT: 0 };
-    for (const l of linesIn({ fy: p.fy, months: [m] }, (l) => l.bu === "SHARED" && l.icFlag === "EXTERNAL" && l.sub === 1)) {
+    for (const l of linesIn(monthPeriod(ym), (l) => l.bu === "SHARED" && l.icFlag === "EXTERNAL" && l.sub === 1)) {
       const pool = (Object.keys(POOL_DEPT) as PoolCode[]).find((k) => POOL_DEPT[k] === l.dept);
       if (!pool) continue;
       const no = ACCOUNTS.get(l.acct)?.acctnumber ?? "";
@@ -532,11 +581,12 @@ export function allocationFor(p: Period, key: AllocKey, netAssocFee = true): All
   const assocB = pools.ADMIN.assocB + pools.IT.assocB;
   const netPool = netAssocFee ? grossPool - assocB : grossPool;
 
+  const yms = periodYms(p);
+  const lastYm = yms[yms.length - 1] ?? ymOf(p.fy, p.months[p.months.length - 1] ?? 1);
   if (key === "workbook") {
     // 逐月：(Admin − B) + (IT − B) + Mgt 按當月 GP% 分
-    for (const m of p.months) {
-      const ym = ymOf(p.fy, m);
-      const { pools: mp } = sharedPools({ fy: p.fy, months: [m] });
+    for (const ym of yms) {
+      const { pools: mp } = sharedPools(monthPeriod(ym));
       const gs = gpShareFor(ym);
       const poolM = (netAssocFee ? mp.ADMIN.net + mp.IT.net : mp.ADMIN.gross + mp.IT.gross) + mp.MGT.gross;
       for (const b of CORE_BUS) {
@@ -549,11 +599,10 @@ export function allocationFor(p: Period, key: AllocKey, netAssocFee = true): All
       share[b] = basis[b] / total;
       amount[b] = Math.round(amount[b]);
     }
-    basisLabel = `worksheet GP%（${gpShareFor(ymOf(p.fy, p.months[p.months.length - 1])).ym ?? "—"}）`;
-    headcountYm = headcountFor(ymOf(p.fy, p.months[p.months.length - 1])).ym;
+    basisLabel = `worksheet GP%（${gpShareFor(lastYm).ym ?? "—"}）`;
+    headcountYm = headcountFor(lastYm).ym;
   } else {
     if (key === "headcount") {
-      const lastYm = ymOf(p.fy, p.months[p.months.length - 1]);
       const hc = headcountFor(lastYm);
       headcountYm = hc.ym;
       for (const b of CORE_BUS) basis[b] = hc.byBu[b];
@@ -777,7 +826,7 @@ export interface BuCashRow {
 }
 
 export function buCash(p: Period): { rows: BuCashRow[]; total: BuCashRow; hasData: boolean } {
-  const ms = new Set(p.months.map((m) => ymOf(p.fy, m)));
+  const ms = new Set(periodYms(p));
   const map = new Map<BuCode, BuCashRow>();
   for (const b of BU_ORDER) map.set(b, { bu: b, extIn: 0, extOut: 0, icIn: 0, icOut: 0, net: 0 });
   let hasData = false;
@@ -923,8 +972,7 @@ export const ALLOC_CATEGORIES: AllocCategory[] = [...GP_SHARE_CATEGORIES, "DN_PR
 const LEDGER_SUB_TO_BU: Record<number, BuCode> = { 2: "EPR", 8: "PROD", 5: "CLS", 7: "JM" };
 
 function inPeriod(ym: string, p: Period): boolean {
-  const { fy, fm } = fyOf(ym);
-  return fy === p.fy && p.months.includes(fm);
+  return periodYmSet(p).has(ym);
 }
 
 export interface NsAllocRow {

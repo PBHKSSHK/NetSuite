@@ -19,7 +19,7 @@ import { ChartTooltip } from "@/components/charts";
 import { Card } from "@/components/ui";
 import { associatesSummary, goodsLine, productionLine, travelLine } from "@/lib/agency";
 import { hkd, hkdCompact, pct } from "@/lib/format";
-import { fyMonthLabel } from "@/lib/fy";
+import { fyMonthLabel, ytdHeading } from "@/lib/fy";
 import { usePalette } from "@/lib/theme";
 
 const AXIS_FONT = { fontSize: 11 };
@@ -197,7 +197,7 @@ export default function BusinessLinesPage() {
       <div>
         <h1 className="text-lg font-semibold">業務線 Business Lines</h1>
         <p className="text-[12px] text-ink3">
-          旅遊／商品／製作／聯營 — 非 agency 服務線嘅專屬指標 · FY2026/27 YTD（4–7 月）
+          旅遊／商品／製作／聯營 — 非 agency 服務線嘅專屬指標 · {ytdHeading()}
         </p>
       </div>
 

@@ -26,7 +26,7 @@ export default function BalanceSheetPage() {
 
   return (
     <div className="space-y-4">
-      <h1 className="text-lg font-semibold">資產負債表 Balance Sheet</h1>
+      <h1 className="text-lg font-semibold">資產負債表（法定） Balance Sheet</h1>
       <FilterBar />
 
       <Card

@@ -23,6 +23,18 @@ export const BANK_TODAY: Record<number, number> = {};
 export const BANK_POINTS: BankPoint[] = [];
 export const DATA_AS_OF: { value: string } = { value: "" };
 
+// hydrate 完成通知（Shell 用 useSyncExternalStore 讀 DATA_AS_OF）
+const dataListeners = new Set<() => void>();
+export function subscribeData(cb: () => void): () => void {
+  dataListeners.add(cb);
+  return () => {
+    dataListeners.delete(cb);
+  };
+}
+function notifyData(): void {
+  for (const cb of dataListeners) cb();
+}
+
 /** 收款明細（fact_collections — NetSuite 收款紀錄，payment_date 升序） */
 export const COLLECTIONS: {
   paymentDate: string;
@@ -510,4 +522,5 @@ async function doHydrate(): Promise<void> {
   }
 
   DATA_AS_OF.value = latestAsOf ? `${latestAsOf} sync` : "未有 sync 紀錄";
+  notifyData();
 }

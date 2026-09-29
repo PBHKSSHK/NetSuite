@@ -22,6 +22,7 @@ export function BuFilterBar({ showLayer = false, showAlloc = false }: { showLaye
           { value: "quarter", label: "季" },
           { value: "ytd", label: "YTD" },
           { value: "full", label: "全年" },
+          { value: "cumulative", label: "累積" },
         ]}
         value={f.mode}
         onChange={f.setMode}

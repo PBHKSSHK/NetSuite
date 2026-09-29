@@ -1,16 +1,16 @@
 "use client";
 
-// BU 還原模組專用 filter：財年、期間（月/季/YTD/全年）、檢視（法定/管理/集團）、
+// BU 還原模組專用 filter：財年、期間（月/季/YTD/全年/累積）、檢視（法定/管理/集團）、
 // Layer（純業務/分攤後）、分攤 key、associates admin fee 抵減。
 // 同 lib/filters.tsx（原有五頁）分開——BU 頁可以睇歷史財年。
 
 import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import type { AllocKey, Period } from "./bu";
-import { availableFys, lastMonthWithData } from "./bu";
+import { availableFys, lastMonthWithData, ymOf, ymRange } from "./bu";
 import { ALLOC_RULES, BU_META } from "./bu-store";
 
 export type BuView = "legal" | "mgmt";
-export type BuMode = "month" | "quarter" | "ytd" | "full";
+export type BuMode = "month" | "quarter" | "ytd" | "full" | "cumulative";
 
 interface BuFilterState {
   fy: string;
@@ -39,7 +39,14 @@ export function monthsFor(mode: BuMode, month: number): number[] {
     return [q * 3 + 1, q * 3 + 2, q * 3 + 3].filter((m) => m <= month);
   }
   if (mode === "full") return Array.from({ length: 12 }, (_, i) => i + 1);
+  // ytd / cumulative：本財年內 4 月至揀選月份（cumulative 另加跨財年 yms）
   return Array.from({ length: month }, (_, i) => i + 1);
+}
+
+/** 累積 = 由最早有 BU 數據嘅月份（BU_META.minYm）到揀選月份，跨財年 */
+export function cumulativeYms(fy: string, month: number, fys: string[]): string[] {
+  const from = BU_META.minYm || (fys[0] ? ymOf(fys[0], 1) : "");
+  return ymRange(from, ymOf(fy, month));
 }
 
 export function BuFilterProvider({ children }: { children: React.ReactNode }) {
@@ -68,7 +75,14 @@ export function BuFilterProvider({ children }: { children: React.ReactNode }) {
     const lm = lastMonthWithData(f);
     setMonth((m) => Math.min(m, lm));
   };
-  const period = useMemo<Period>(() => ({ fy, months: monthsFor(mode, month) }), [fy, mode, month]);
+  const period = useMemo<Period>(
+    () =>
+      mode === "cumulative"
+        ? { fy, months: monthsFor(mode, month), yms: cumulativeYms(fy, month, fys) }
+        : { fy, months: monthsFor(mode, month) },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [fy, mode, month, fys.join(","), BU_META.minYm]
+  );
   const value = useMemo(
     () => ({ fy, fys, mode, month, lastMonth, layer, allocKey, netAssocFee, period, setFy, setMode, setMonth, setLayer, setAllocKey, setNetAssocFee }),
     // eslint-disable-next-line react-hooks/exhaustive-deps

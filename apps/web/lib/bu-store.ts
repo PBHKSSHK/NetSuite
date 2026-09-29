@@ -13,6 +13,8 @@ export interface BuPlRow {
   ym: string;
   subsidiaryId: number;
   departmentId: number;
+  /** NetSuite class（transactionline.class，fallback 主行 class）；0 = 未標 */
+  classId: number;
   accountId: number;
   txnType: string;
   icEntityId: number;
@@ -26,6 +28,7 @@ export interface BuCashRow {
   ym: string;
   subsidiaryId: number;
   departmentId: number;
+  classId: number;
   direction: "in" | "out";
   icEntityId: number;
   amount: number;
@@ -35,6 +38,8 @@ export interface BuCashRow {
 export interface BuMappingRow {
   subsidiaryId: number;
   departmentId: number | null;
+  /** null = 該 department 所有 class；有值 = 只限該 class（優先於 department 規則） */
+  classId: number | null;
   buCode: string;
   effectiveFrom: string;
   effectiveTo: string | null;
@@ -140,6 +145,7 @@ export const HEADCOUNT: HeadcountRow[] = [];
 export const ACCOUNT_OVERRIDE = new Map<number, string>();
 export const ACCOUNTS = new Map<number, AccountInfo>();
 export const DEPT_NAMES = new Map<number, string>();
+export const CLASS_NAMES = new Map<number, string>();
 export const IC_BALANCES: IcBalanceRow[] = [];
 export const GP_SHARE: GpShareRow[] = [];
 export const DIRECTOR_ALLOC: DirectorAllocRow[] = [];
@@ -185,20 +191,20 @@ export function hydrateBu(): Promise<void> {
 }
 
 async function doHydrate(): Promise<void> {
-  const [pl, cash, mapping, icEnt, icAcc, rules, hc, overrides, accounts, groups, depts, periods, gpRows, dirRows, taxRows, reclassRows, allocTxnRows] = await Promise.all([
+  const [pl, cash, mapping, icEnt, icAcc, rules, hc, overrides, accounts, groups, depts, periods, gpRows, dirRows, taxRows, reclassRows, allocTxnRows, classRows] = await Promise.all([
     fetchAll<any>(
       "fact_bu_pl",
-      "ym, subsidiary_id, department_id, account_id, txn_type, ic_entity_id, ic_journal, debit, credit, lines",
-      ["ym", "subsidiary_id", "department_id", "account_id", "txn_type", "ic_entity_id", "ic_journal"]
+      "ym, subsidiary_id, department_id, class_id, account_id, txn_type, ic_entity_id, ic_journal, debit, credit, lines",
+      ["ym", "subsidiary_id", "department_id", "class_id", "account_id", "txn_type", "ic_entity_id", "ic_journal"]
     ),
-    fetchAll<any>("fact_bu_cash", "ym, subsidiary_id, department_id, direction, ic_entity_id, amount, payments", [
+    fetchAll<any>("fact_bu_cash", "ym, subsidiary_id, department_id, class_id, direction, ic_entity_id, amount, payments", [
       "ym",
       "subsidiary_id",
       "department_id",
       "direction",
       "ic_entity_id",
     ]),
-    fetchAll<any>("bu_mapping", "subsidiary_id, department_id, bu_code, effective_from, effective_to, note", ["id"]),
+    fetchAll<any>("bu_mapping", "subsidiary_id, department_id, class_id, bu_code, effective_from, effective_to, note", ["id"]),
     fetchAll<any>("ic_entity_map", "entity_id, entity_type, counterparty_subsidiary_id, relation, name", ["entity_id"]),
     fetchAll<any>("ic_account_map", "account_id, acctnumber, ic_type", ["account_id"]),
     fetchAll<any>("allocation_rules", "rule_id, cost_pool, key_type, label, params, is_default", ["rule_id"]),
@@ -207,6 +213,7 @@ async function doHydrate(): Promise<void> {
     fetchAll<any>("dim_account", "id, acctnumber, fullname, accttype, report_group_id", ["id"]),
     fetchAll<any>("report_group", "id, code", ["id"]),
     fetchAll<any>("dim_department", "id, name", ["id"]),
+    fetchAll<any>("dim_class", "id, name", ["id"]).catch(() => [] as any[]),
     fetchAll<any>("dim_period", "id, start_date", ["id"]),
     fetchAll<any>("gp_share_monthly", "ym, bu_code, pct", ["ym", "bu_code"]),
     fetchAll<any>("director_alloc_monthly", "ym, bu_code, amount, ledger_salary, ledger_mpf", ["ym", "bu_code"]),
@@ -234,6 +241,7 @@ async function doHydrate(): Promise<void> {
       ym: r.ym,
       subsidiaryId: r.subsidiary_id,
       departmentId: r.department_id,
+      classId: num(r.class_id),
       accountId: r.account_id,
       txnType: r.txn_type,
       icEntityId: r.ic_entity_id,
@@ -252,6 +260,7 @@ async function doHydrate(): Promise<void> {
       ym: r.ym,
       subsidiaryId: r.subsidiary_id,
       departmentId: r.department_id,
+      classId: num(r.class_id),
       direction: r.direction,
       icEntityId: r.ic_entity_id,
       amount: num(r.amount),
@@ -264,6 +273,7 @@ async function doHydrate(): Promise<void> {
     BU_MAPPING.push({
       subsidiaryId: r.subsidiary_id,
       departmentId: r.department_id,
+      classId: r.class_id ?? null,
       buCode: r.bu_code,
       effectiveFrom: r.effective_from,
       effectiveTo: r.effective_to,
@@ -319,6 +329,9 @@ async function doHydrate(): Promise<void> {
   DEPT_NAMES.clear();
   for (const d of depts) DEPT_NAMES.set(d.id, d.name);
   if (!DEPT_NAMES.has(0)) DEPT_NAMES.set(0, "未標 department");
+  CLASS_NAMES.clear();
+  for (const c of classRows) CLASS_NAMES.set(c.id, c.name);
+  CLASS_NAMES.set(0, "未標 class");
 
   IC_BALANCES.length = 0;
   for (const r of icGl) {

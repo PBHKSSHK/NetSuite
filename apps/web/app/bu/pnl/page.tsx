@@ -146,14 +146,14 @@ function PnlInner() {
         </div>
         <p className="text-[11px] text-ink3 mt-2">
           {view === "mgmt"
-            ? "收入落在 department 所屬 BU，唔理由哪間公司開單（§2.2 步驟 3）。SHARED 欄 = PBHK Admin / Management / IT 外部成本；Layer 2 後由 4 個 BU 承擔。"
+            ? "收入落在 department 所屬 BU，唔理由哪間公司開單（§2.2 步驟 3）。SHARED 欄 = PBHK Admin / Management / IT 外部成本；Layer 2 後由各 BU 承擔。"
             : "法定合計 vs 管理帳合計嘅差異 = 集團內交易淨額（見 Bridge 頁）。"}
         </p>
       </Card>
 
       <Card
         title={`月度 trend — ${f.fy}`}
-        subtitle={`4 個 BU ${f.layer === 2 ? "分攤後" : "純業務"}；虛線 = 集團管理帳合計`}
+        subtitle={`各 BU ${f.layer === 2 ? "分攤後" : "純業務"}；虛線 = 集團管理帳合計`}
         right={
           <Seg
             options={[

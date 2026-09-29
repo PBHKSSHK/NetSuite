@@ -29,18 +29,19 @@ import {
 
 // ── BU / 行次定義 ────────────────────────────────────────────────────────────
 
-export type BuCode = "EPR" | "PROD" | "JM" | "CLS" | "SHARED" | "OTHER";
+export type BuCode = "EPR" | "PROD" | "YT" | "JM" | "CLS" | "SHARED" | "OTHER";
 
 export const BU_LIST: { code: BuCode; label: string; en: string }[] = [
   { code: "EPR", label: "ePR", en: "ePR" },
   { code: "PROD", label: "Production", en: "Production" },
+  { code: "YT", label: "YouTube", en: "Production · class YouTube" },
   { code: "JM", label: "JM", en: "Jervois M" },
   { code: "CLS", label: "CLS", en: "CLS Garage" },
   { code: "SHARED", label: "PB 平台（待分攤）", en: "PB-Platform / Shared" },
   { code: "OTHER", label: "其他", en: "Other" },
 ];
-export const CORE_BUS: BuCode[] = ["EPR", "PROD", "JM", "CLS"];
-export const BU_ORDER: BuCode[] = ["EPR", "PROD", "JM", "CLS", "SHARED", "OTHER"];
+export const CORE_BUS: BuCode[] = ["EPR", "PROD", "YT", "JM", "CLS"];
+export const BU_ORDER: BuCode[] = ["EPR", "PROD", "YT", "JM", "CLS", "SHARED", "OTHER"];
 
 export function buLabel(code: string): string {
   return BU_LIST.find((b) => b.code === code)?.label ?? code;
@@ -170,6 +171,8 @@ export interface Line {
   fm: number;
   sub: number;
   dept: number;
+  /** NetSuite class id（0 = 未標） */
+  cls: number;
   acct: number;
   ttype: string;
   icFlag: IcFlag;
@@ -199,19 +202,31 @@ function reclassFor(sub: number, dept: number, ym: string, acctnumber: string): 
   return null;
 }
 
-function buFor(sub: number, dept: number, ym: string, acctnumber = ""): BuCode {
+/**
+ * bu_mapping 優先次序：(dept, class) 精確 > (dept, 任何 class) > 公司預設（dept null）。
+ * class 規則只喺 class_id 有值時生效，例：(SSHK, Production, class YouTube) → YT。
+ */
+function buFor(sub: number, dept: number, ym: string, acctnumber = "", cls = 0): BuCode {
   const reclass = acctnumber ? reclassFor(sub, dept, ym, acctnumber) : null;
   if (reclass) return reclass;
   const date = `${ym}-15`;
+  let deptMatch: BuCode | null = null;
   let fallback: BuCode | null = null;
   for (const m of BU_MAPPING) {
     if (m.subsidiaryId !== sub) continue;
     if (m.effectiveFrom > date) continue;
     if (m.effectiveTo && m.effectiveTo < date) continue;
-    if (m.departmentId === dept) return m.buCode as BuCode;
-    if (m.departmentId == null && !fallback) fallback = m.buCode as BuCode;
+    if (m.departmentId === dept) {
+      if (m.classId != null) {
+        if (m.classId === cls) return m.buCode as BuCode;
+        continue;
+      }
+      if (!deptMatch) deptMatch = m.buCode as BuCode;
+      continue;
+    }
+    if (m.departmentId == null && m.classId == null && !fallback) fallback = m.buCode as BuCode;
   }
-  return fallback ?? "OTHER";
+  return deptMatch ?? fallback ?? "OTHER";
 }
 
 const RG_TO_LINE: Record<string, MgmtLine> = {
@@ -288,13 +303,14 @@ export function allLines(): Line[] {
       fm,
       sub: r.subsidiaryId,
       dept: r.departmentId,
+      cls: r.classId,
       acct: r.accountId,
       ttype: r.txnType,
       icFlag: c.icFlag,
       icEntity: r.icEntityId,
       counterparty: c.counterparty,
       related: c.related,
-      bu: buFor(r.subsidiaryId, r.departmentId, r.ym, ACCOUNTS.get(r.accountId)?.acctnumber ?? ""),
+      bu: buFor(r.subsidiaryId, r.departmentId, r.ym, ACCOUNTS.get(r.accountId)?.acctnumber ?? "", r.classId),
       mgmtLine: mgmtLineFor(r.accountId),
       amount: r.credit - r.debit,
       lines: r.lines,
@@ -371,11 +387,11 @@ function finalize(c: PlColumn): PlColumn {
 
 export type AllocKey = "workbook" | "headcount" | "gp_share" | "revenue_share" | "fixed_pct";
 
-/** 會計 worksheet 欄 → BU（PBHK Youtube 喺 NetSuite 同 Production 同一 dept，併入 Production） */
+/** 會計 worksheet 欄 → BU（YouTube 喺 NetSuite 係 Production dept 內嘅 class，經 bu_mapping.class_id 分出 YT BU） */
 export const WS_TO_BU: Record<string, BuCode | "ASSOC"> = {
   PROD_PB: "PROD",
   PROD_704: "PROD",
-  YT: "PROD",
+  YT: "YT",
   EPR: "EPR",
   EPR_COMM: "EPR",
   CLS: "CLS",
@@ -833,7 +849,7 @@ export function buCash(p: Period): { rows: BuCashRow[]; total: BuCashRow; hasDat
   for (const c of BU_CASH) {
     if (!ms.has(c.ym)) continue;
     hasData = true;
-    const bu = buFor(c.subsidiaryId, c.departmentId, c.ym);
+    const bu = buFor(c.subsidiaryId, c.departmentId, c.ym, "", c.classId);
     const r = map.get(bu)!;
     const ent = c.icEntityId ? IC_ENTITIES.get(c.icEntityId) : undefined;
     const isIc = ent?.relation === "group";

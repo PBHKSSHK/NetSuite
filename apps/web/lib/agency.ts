@@ -14,7 +14,7 @@
 
 import { AR_OPEN } from "./demo";
 import { OPERATING_SUBS } from "./dims";
-import { ACTUAL_MONTHS, CURRENT_FY, PRIOR_FY } from "./fy";
+import { ACTUAL_MONTHS, CLOSED_MONTHS, CURRENT_FY, PRIOR_FY, annualisationMonths } from "./fy";
 import { ALL_SUB_IDS, kpiAgi, resolveSubs, sumFacts } from "./queries";
 
 // ── shared helpers ───────────────────────────────────────────────────────────
@@ -197,7 +197,7 @@ export function churnStats(): {
 } {
   const priorRev = sumFacts({ fy: PRIOR_FY, kind: "actual", subIds: ALL_SUB_IDS, months: ALL_12, groups: REV_CODES });
   const existingYtd = newVsExisting().reduce((a, r) => a + r.existingRev, 0);
-  const existingAnnualised = (existingYtd / ACTUAL_MONTHS) * 12;
+  const existingAnnualised = (existingYtd / CLOSED_MONTHS) * 12;
   return {
     lostClients: LOST_CLIENTS,
     clientRetentionPct: round1((100 * (PRIOR_FY_CLIENT_BASE - LOST_CLIENTS.length)) / PRIOR_FY_CLIENT_BASE),
@@ -349,7 +349,7 @@ export function headcountTrend(): { month: number; bySub: Record<number, number>
 export function agiPerFeeEarner(months: number[]): { agi: number; feeEarners: number; annualised: number } {
   const agi = Math.round(kpiAgi(-1, months).agi);
   const feeEarners = HC_BY_MONTH[HC_BY_MONTH.length - 1].feeEarners;
-  const annualised = months.length ? Math.round(((agi / months.length) * 12) / feeEarners) : 0;
+  const annualised = months.length ? Math.round(((agi / annualisationMonths(months)) * 12) / feeEarners) : 0;
   return { agi, feeEarners, annualised };
 }
 

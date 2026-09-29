@@ -9,7 +9,7 @@ import { Card, Seg, StatTile } from "@/components/ui";
 import { BANK_TODAY, COLLECTIONS, DISBURSEMENTS } from "@/lib/store";
 import { OPERATING_SUBS } from "@/lib/dims";
 import { hkdCompact, pct, variancePct } from "@/lib/format";
-import { ACTUAL_MONTHS, fyMonthLabel, monthsInPeriod, periodLabel, TODAY } from "@/lib/fy";
+import { ACTUAL_MONTHS, CURRENT_FY, fyMonthLabel, monthsInPeriod, periodLabel, PRIOR_FY, TODAY } from "@/lib/fy";
 import {
   ageBuckets,
   arItems,
@@ -22,7 +22,6 @@ import {
   pnlTrend,
   sumFacts,
 } from "@/lib/queries";
-import { CURRENT_FY, PRIOR_FY } from "@/lib/fy";
 import { agiPerFeeEarner, ratioSuite, runwayBySub } from "../lib/agency";
 import { chaseList, findings } from "@/lib/advisor";
 
@@ -71,7 +70,7 @@ export default function OverviewPage() {
     <div className="space-y-4">
       <div className="flex items-baseline justify-between flex-wrap gap-2">
         <h1 className="text-lg font-semibold">
-          集團總覽 <span className="text-[13px] text-ink3 font-normal">FY2026/27 · {plabel}</span>
+          集團總覽 <span className="text-[13px] text-ink3 font-normal">{CURRENT_FY} · {plabel}</span>
         </h1>
         <div className="flex items-center gap-2">
           <Seg

@@ -70,7 +70,7 @@ export default function OverviewPage() {
     <div className="space-y-4">
       <div className="flex items-baseline justify-between flex-wrap gap-2">
         <h1 className="text-lg font-semibold">
-          集團總覽 <span className="text-[13px] text-ink3 font-normal">{CURRENT_FY} · {plabel}</span>
+          集團總覽（法定） <span className="text-[13px] text-ink3 font-normal">{CURRENT_FY} · {plabel}</span>
         </h1>
         <div className="flex items-center gap-2">
           <Seg

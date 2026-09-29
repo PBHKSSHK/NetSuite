@@ -196,14 +196,14 @@ export default function SharedPage() {
       </Card>
 
       <Card
-        title={`NetSuite 實際分攤（會計 GP% workbook）vs BU 還原 — ${periodLabelOf(p)}`}
+        title={`NetSuite 實際分攤（會計 GP% workbook）vs BU 管理帳 — ${periodLabelOf(p)}`}
         subtitle="會計「BU gross profit share」清單：NetSuite 內按 GP% 分入各公司嘅 Share of Admin / IT / Mgt、management fee，另列 DN 同 tax planning 開單。GP% 機制合計 vs 本系統 Layer 2 還原（pool C + 老闆人工）；差異 = 法定帳同管理帳嘅分攤口徑差（人頭扣減、老闆人工固定額、GP% 取數月份）。"
         right={
           <ExportButton
             onClick={() =>
               exportCsv(
                 `ns_allocation_${p.fy}.csv`,
-                ["BU", ...nsCats.map((c) => ALLOC_CATEGORY_LABEL[c]), "GP% 機制合計", "BU 還原分攤", "差異"],
+                ["BU", ...nsCats.map((c) => ALLOC_CATEGORY_LABEL[c]), "GP% 機制合計", "BU 管理帳分攤", "差異"],
                 [...ns.rows, ns.total].map((r) => [r.bu === "SHARED" ? "合計" : buLabel(r.bu), ...nsCats.map((c) => Math.round(r.byCat[c])), Math.round(r.gpShare), Math.round(r.restored), Math.round(r.diff)])
               )
             }
@@ -224,7 +224,7 @@ export default function SharedPage() {
                     </th>
                   ))}
                   <th className="num">GP% 機制合計</th>
-                  <th className="num">BU 還原分攤</th>
+                  <th className="num">BU 管理帳分攤</th>
                   <th className="num">差異</th>
                 </tr>
               </thead>

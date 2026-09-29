@@ -57,7 +57,7 @@ export default function PnLPage() {
 
   return (
     <div className="space-y-4">
-      <h1 className="text-lg font-semibold">損益表 P&L</h1>
+      <h1 className="text-lg font-semibold">損益表（法定） P&L</h1>
       <FilterBar showAllocToggle />
 
       <Card

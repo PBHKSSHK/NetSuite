@@ -9,10 +9,10 @@ import { DATA_AS_OF, DATA_MODE, subscribeData } from "@/lib/store";
 import { supabase } from "@/lib/supabase";
 
 const NAV = [
-  { href: "/", label: "集團總覽", en: "Overview" },
-  { href: "/bu", label: "BU 還原", en: "BU P&L / Cash", section: true },
-  { href: "/pnl", label: "損益表", en: "P&L" },
-  { href: "/balance-sheet", label: "資產負債表", en: "Balance Sheet" },
+  { href: "/", label: "集團總覽（法定）", en: "Overview" },
+  { href: "/bu", label: "BU 管理帳", en: "BU P&L / Cash", section: true },
+  { href: "/pnl", label: "損益表（法定）", en: "P&L" },
+  { href: "/balance-sheet", label: "資產負債表（法定）", en: "Balance Sheet" },
   { href: "/budget", label: "預算", en: "Budgeting" },
   { href: "/cashflow", label: "現金流", en: "Cashflow" },
   { href: "/cost-center", label: "成本中心", en: "Cost Center" },
@@ -106,7 +106,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
         <div className="hidden lg:block px-4 py-3 mt-2 border-t border-grid text-[11px] text-ink3 leading-relaxed">
           數據截至 {dataAsOf || "同步中…"}
           <br />
-          Blueprint v1.0 + BU 還原 v0.1
+          Blueprint v1.0 + BU 管理帳 v0.3
           <div className="mt-2">
             <button
               onClick={handleSignOut}

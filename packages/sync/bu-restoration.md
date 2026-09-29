@@ -51,6 +51,15 @@ BU 管理帳要分開兩條數。fact_bu_pl / fact_bu_cash 加 `class_id`（入 
 app 內 `buFor()` 優先次序：(dept, class) 精確 > (dept, 任何 class) > 公司預設。
 會計 worksheet 欄 `YT`（GP% / headcount 2021-04 → 2024-03）對應 YT BU。
 
+2026-09-29 全量 backfill（2021-04 → 2026-09，逐 12 個月窗口，每個約 20 秒）結果：
+- `dim_class` 13 個 class；YouTube = id 13「Youtube Channel」（parent 8 Production）。
+- 有 class 嘅 P&L 行主要喺 **sub 1 PBHK / dept 2 Production / class 13**（2021-04 → 2026-05，358 行）；
+  sub 2 SSHK dept 2 冇 YouTube class 行。`bu_mapping` id 26 / 27：(1,2,13) 及 (2,2,13) → YT。
+- 對數：66 個月逐月 lines / debit / credit 對比 backfill 前 snapshot，核心公司（sub 1/2/5/7/8）一致；
+  差異全部來自 sub 6 Go Asia（新 Administrator role 先睇到，落 OTHER BU）同近月 NetSuite 真實改動。
+- 教訓：Journal 每行 `mainline = 'T'`，header class fallback 唔可以直接 LEFT JOIN mainline 行（會 fan-out），
+  要用 per-transaction derived table 並排除 Journal。
+
 **Backfill / 重抽**（route 支援月份窗口；一律 `replace_ym` 先清該月再寫）：
 
 ```

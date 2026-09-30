@@ -29,20 +29,20 @@ import {
 
 // ── BU / 行次定義 ────────────────────────────────────────────────────────────
 
+/** YT（YouTube class）保留為可用 code：2026-09-30 用戶決定併返入 Production，bu_mapping 26/27 現指向 PROD；要再分拆時改 mapping 並將 YT 加回 BU_LIST / CORE_BUS / BU_ORDER。 */
 export type BuCode = "EPR" | "COMM" | "PROD" | "YT" | "JM" | "CLS" | "SHARED" | "OTHER";
 
 export const BU_LIST: { code: BuCode; label: string; en: string }[] = [
   { code: "EPR", label: "ePR", en: "ePR" },
   { code: "COMM", label: "SSHK Comm", en: "SSHK Commercial Team" },
   { code: "PROD", label: "Production", en: "Production" },
-  { code: "YT", label: "YouTube", en: "Production · class YouTube" },
   { code: "JM", label: "JM", en: "Jervois M" },
   { code: "CLS", label: "CLS", en: "CLS Garage" },
   { code: "SHARED", label: "PB 平台（待分攤）", en: "PB-Platform / Shared" },
   { code: "OTHER", label: "其他", en: "Other" },
 ];
-export const CORE_BUS: BuCode[] = ["EPR", "COMM", "PROD", "YT", "JM", "CLS"];
-export const BU_ORDER: BuCode[] = ["EPR", "COMM", "PROD", "YT", "JM", "CLS", "SHARED", "OTHER"];
+export const CORE_BUS: BuCode[] = ["EPR", "COMM", "PROD", "JM", "CLS"];
+export const BU_ORDER: BuCode[] = ["EPR", "COMM", "PROD", "JM", "CLS", "SHARED", "OTHER"];
 
 export function buLabel(code: string): string {
   return BU_LIST.find((b) => b.code === code)?.label ?? code;
@@ -388,11 +388,11 @@ function finalize(c: PlColumn): PlColumn {
 
 export type AllocKey = "workbook" | "headcount" | "gp_share" | "revenue_share" | "fixed_pct";
 
-/** 會計 worksheet 欄 → BU（YouTube 喺 NetSuite 係 Production dept 內嘅 class，經 bu_mapping.class_id 分出 YT BU） */
+/** 會計 worksheet 欄 → BU（YouTube 喺 NetSuite 係 Production dept 內嘅 class；2026-09-30 起併入 Production，worksheet YT 欄一併歸 PROD） */
 export const WS_TO_BU: Record<string, BuCode | "ASSOC"> = {
   PROD_PB: "PROD",
   PROD_704: "PROD",
-  YT: "YT",
+  YT: "PROD",
   EPR: "EPR",
   EPR_COMM: "COMM",
   CLS: "CLS",

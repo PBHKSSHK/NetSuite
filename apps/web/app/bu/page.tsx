@@ -76,7 +76,7 @@ export default function BuCockpit() {
         <StatTile label="純利 Net（管理帳）" value={hkdCompact(npOf(T))} delta={delta(npOf(T), TL ? npOf(TL) : null)} deltaLabel="vs 去年同期" note={`法定合計對數見 Bridge；分攤 key：${f.allocKey}`} />
       </div>
 
-      <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-3">
+      <div className="grid md:grid-cols-2 xl:grid-cols-5 gap-3">
         {CORE_BUS.map((b) => {
           const c = cur[b];
           const l = ly?.[b];

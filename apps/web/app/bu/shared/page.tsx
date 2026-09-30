@@ -95,7 +95,7 @@ export default function SharedPage() {
           </div>
         </div>
         <div className="bg-surface rounded-xl border border-ringc px-4 py-3.5">
-          <div className="text-[12px] text-ink2">(C) 分攤落 4 個 BU</div>
+          <div className="text-[12px] text-ink2">(C) 分攤落各 BU</div>
           <div className="text-2xl font-semibold mt-1 num">{hkdCompact(chosen.pool)}</div>
           <div className="text-[11px] text-ink3 mt-1">key：{chosen.label}</div>
         </div>
@@ -349,7 +349,7 @@ export default function SharedPage() {
 
       <Card
         title="分攤方法對比"
-        subtitle={`同一 pool 用唔同 key 分俾 4 個 BU（老闆人工另計，唔受 key 影響）`}
+        subtitle={`同一 pool 用唔同 key 分俾各 BU（老闆人工另計，唔受 key 影響）`}
         right={<ExportButton onClick={() => exportCsv(`allocation_compare_${p.fy}.csv`, ["BU", ...allocs.map((a) => a.label)], CORE_BUS.map((b) => [buLabel(b), ...allocs.map((a) => a.amount[b])]))} />}
       >
         <AllocCompareChart data={compare} series={allocs.map((a) => ({ key: a.key, label: a.label }))} />

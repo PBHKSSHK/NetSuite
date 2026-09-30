@@ -12,7 +12,7 @@ const AXIS_FONT = { fontSize: 11 };
 
 /** BU → 固定色位（categorical slots，跨頁一致） */
 export function buColor(p: ReturnType<typeof usePalette>, bu: BuCode | "TOTAL"): string {
-  const idx: Record<string, number> = { EPR: 0, PROD: 1, JM: 2, CLS: 3, SHARED: 6, OTHER: 4, TOTAL: 7 };
+  const idx: Record<string, number> = { EPR: 0, COMM: 6, PROD: 1, YT: 5, JM: 2, CLS: 3, SHARED: 6, OTHER: 4, TOTAL: 7 };
   return bu === "SHARED" ? p.inkMuted : p.series[idx[bu] ?? 7];
 }
 

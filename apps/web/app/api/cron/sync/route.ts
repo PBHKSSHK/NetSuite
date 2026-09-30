@@ -69,16 +69,42 @@ async function sqAll(token: string, q: string): Promise<Record<string, string>[]
   return out;
 }
 
-async function ingest(table: string, rows: object[], mode?: "replace"): Promise<void> {
-  for (let i = 0; i < rows.length; i += 2000) {
+async function ingest(table: string, rows: object[], mode?: "replace" | "replace_ym", yms?: string[]): Promise<void> {
+  // rows 為空但有 mode（例如 replace_ym 清空某月）都要打一次
+  const total = Math.max(rows.length, mode ? 1 : 0);
+  for (let i = 0; i < total; i += 2000) {
     const r = await fetch(INGEST, {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-ingest-secret": process.env.INGEST_SECRET! },
-      body: JSON.stringify({ table, rows: rows.slice(i, i + 2000), ...(i === 0 && mode ? { mode } : {}) }),
+      body: JSON.stringify({ table, rows: rows.slice(i, i + 2000), ...(i === 0 && mode ? { mode, ...(yms ? { yms } : {}) } : {}) }),
     });
     if (!r.ok) throw new Error(`ingest ${table}: ${await r.text()}`);
   }
 }
+
+/** 'YYYY-MM' → 下月 1 號 ISO date */
+const nextMonthStart = (ym: string): string => {
+  const y = Number(ym.slice(0, 4));
+  const m = Number(ym.slice(5, 7));
+  return new Date(Date.UTC(y, m, 1)).toISOString().slice(0, 10);
+};
+/** [fromDate, toDate) 內所有 'YYYY-MM' */
+const ymsBetween = (fromDate: string, toDate: string): string[] => {
+  const out: string[] = [];
+  let y = Number(fromDate.slice(0, 4));
+  let m = Number(fromDate.slice(5, 7));
+  for (let i = 0; i < 240; i++) {
+    const ym = `${y}-${String(m).padStart(2, "0")}`;
+    if (`${ym}-01` >= toDate) break;
+    out.push(ym);
+    m += 1;
+    if (m > 12) {
+      m = 1;
+      y += 1;
+    }
+  }
+  return out;
+};
 
 // 日期一律喺 SuiteQL 用 TO_CHAR 定格式；呢度只兜底處理 MM/DD/YYYY（NetSuite 原生輸出跟用戶偏好，可能係 DD/MM/YYYY）
 const mdy = (s: string | null): string | null => {
@@ -95,12 +121,24 @@ export async function GET(req: Request) {
   if (expected && presented !== expected) {
     return new Response("unauthorized", { status: 401 });
   }
+  // ?from=YYYY-MM&to=YYYY-MM：只重抽 BU facts（fact_bu_pl / fact_bu_cash）指定月份窗口（backfill 用）；
+  // ?only=bu：跳過 GL / AR / AP / 收付款，只跑 BU + dim_class + 銀行結餘。
+  const url = new URL(req.url);
+  const qFrom = url.searchParams.get("from");
+  const qTo = url.searchParams.get("to");
+  const ymRe = /^\d{4}-\d{2}$/;
+  if ((qFrom && !ymRe.test(qFrom)) || (qTo && !ymRe.test(qTo)) || (qTo && !qFrom)) {
+    return new Response("from/to must be YYYY-MM (to requires from)", { status: 400 });
+  }
+  const buOnly = url.searchParams.get("only") === "bu" || !!qFrom;
   const started = new Date().toISOString();
   try {
     const token = await nsToken();
 
+    let gl: Record<string, string>[] = [];
+    if (!buOnly) {
     const since = new Date(Date.now() - 120 * 86400000).toISOString().slice(0, 10);
-    const gl = await sqAll(
+    gl = await sqAll(
       token,
       `SELECT t.postingperiod AS pid, tl.subsidiary AS sub, tal.account AS acct, NVL(tl.department, 0) AS dept, SUM(NVL(tal.debit,0)) AS d, SUM(NVL(tal.credit,0)) AS c FROM transactionaccountingline tal JOIN transaction t ON t.id = tal.transaction JOIN transactionline tl ON tl.transaction = tal.transaction AND tl.id = tal.transactionline WHERE tal.posting = 'T' AND t.postingperiod IN (SELECT DISTINCT t2.postingperiod FROM transaction t2 WHERE t2.posting = 'T' AND t2.createddate >= TO_DATE('${since}','YYYY-MM-DD')) GROUP BY t.postingperiod, tl.subsidiary, tal.account, NVL(tl.department, 0)`
     );
@@ -179,7 +217,17 @@ export async function GET(req: Request) {
       }))
     );
 
+    } // !buOnly
+
+    // ── class 維度（Production dept 內 YouTube class 要分開兩條數）──
+    const classes = await sqAll(token, "SELECT id, name, parent, isinactive FROM classification");
+    await ingest(
+      "dim_class",
+      classes.map((r) => ({ id: Number(r.id), name: r.name, parent_id: r.parent ? Number(r.parent) : null, is_inactive: r.isinactive === "T" }))
+    );
+
     // ── BU 還原 facts（blueprint v0.1 §3.1）：重抽最近 4 個月（防 back-dated 入帳）──
+    //    窗口內月份用 replace_ym 先清後寫（key 含 class_id，舊 aggregate 行唔會被 upsert 覆蓋）。
     //    query 拆兩條（IC journal 以 id 清單分拆），避免 SuiteQL 全表子查詢 timeout。
     //    entity 清單 = ic_entity_map 全部（group + related_external）；新增 entity 要同步更新。
     const IC_ENT = "1447,1488,1489,2674,2762,2763,2792,2907,3201,3207,3958,4468,4576,1517,1518,1521,1522,1767,863,1027,2714,2873,3106,3328,2568,1524,1525,1526,1527,1545,2930,3245,3584,4113,1402,2432,2789,3511,3634,4087,4126,4399,762,3626,4623";
@@ -192,10 +240,16 @@ export async function GET(req: Request) {
       const d = new Date();
       return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() - offset, 1)).toISOString().slice(0, 10);
     };
-    const buFrom = monthStart(3);
-    const buTo = monthStart(-1);
+    const buFrom = qFrom ? `${qFrom}-01` : monthStart(3);
+    const buTo = qFrom ? nextMonthStart(qTo ?? qFrom) : monthStart(-1);
+    const buYms = ymsBetween(buFrom, buTo);
     const buWindow = `t.trandate >= TO_DATE('${buFrom}','YYYY-MM-DD') AND t.trandate < TO_DATE('${buTo}','YYYY-MM-DD')`;
-    const buPlBase = `FROM transactionaccountingline tal JOIN transaction t ON t.id = tal.transaction JOIN transactionline tl ON tl.transaction = tal.transaction AND tl.id = tal.transactionline JOIN account a ON a.id = tal.account WHERE tal.posting = 'T' AND t.posting = 'T' AND a.accttype IN ('Income','COGS','Expense','OthIncome','OthExpense')`;
+    // class：行 class 為先，冇就用單頭（mainline）class。
+    //   注意：Journal 每一行 mainline 都係 'T'，直接 LEFT JOIN transactionline mainline 會將 journal 行 fan-out N 倍
+    //  （2026-09-29 首次 backfill 踩過），所以單頭 class 用「每張交易一行」嘅 derived table，並排除 Journal。
+    const hdrClass = `LEFT JOIN (SELECT m.transaction AS tid, MAX(m.class) AS cls FROM transactionline m JOIN transaction tm ON tm.id = m.transaction WHERE m.mainline = 'T' AND tm.type <> 'Journal' AND tm.trandate >= TO_DATE('${buFrom}','YYYY-MM-DD') AND tm.trandate < TO_DATE('${buTo}','YYYY-MM-DD') GROUP BY m.transaction) tlm ON tlm.tid = t.id`;
+    const buPlBase = `FROM transactionaccountingline tal JOIN transaction t ON t.id = tal.transaction JOIN transactionline tl ON tl.transaction = tal.transaction AND tl.id = tal.transactionline ${hdrClass} JOIN account a ON a.id = tal.account WHERE tal.posting = 'T' AND t.posting = 'T' AND a.accttype IN ('Income','COGS','Expense','OthIncome','OthExpense')`;
+    const clsExpr = "COALESCE(tl.class, tlm.cls, 0)";
     const icJournalIds = await sqAll(
       token,
       `SELECT DISTINCT tal.transaction AS tid FROM transactionaccountingline tal JOIN transaction t ON t.id = tal.transaction WHERE t.type = 'Journal' AND t.posting = 'T' AND tal.account IN (1154,1155) AND ${buWindow}`
@@ -203,12 +257,12 @@ export async function GET(req: Request) {
     const idList = icJournalIds.length ? icJournalIds.map((r) => Number(r.tid)).join(",") : "0";
     const buA = await sqAll(
       token,
-      `SELECT TO_CHAR(t.trandate,'YYYY-MM') AS ym, tl.subsidiary AS sub, NVL(tl.department,0) AS dept, tal.account AS acct, t.type AS ttype, CASE WHEN t.entity IN (${IC_ENT}) THEN t.entity ELSE 0 END AS ic_entity, SUM(NVL(tal.debit,0)) AS d, SUM(NVL(tal.credit,0)) AS c, COUNT(*) AS n ${buPlBase} AND ${buWindow} AND t.id NOT IN (${idList}) GROUP BY TO_CHAR(t.trandate,'YYYY-MM'), tl.subsidiary, NVL(tl.department,0), tal.account, t.type, CASE WHEN t.entity IN (${IC_ENT}) THEN t.entity ELSE 0 END`
+      `SELECT TO_CHAR(t.trandate,'YYYY-MM') AS ym, tl.subsidiary AS sub, NVL(tl.department,0) AS dept, ${clsExpr} AS cls, tal.account AS acct, t.type AS ttype, CASE WHEN t.entity IN (${IC_ENT}) THEN t.entity ELSE 0 END AS ic_entity, SUM(NVL(tal.debit,0)) AS d, SUM(NVL(tal.credit,0)) AS c, COUNT(*) AS n ${buPlBase} AND ${buWindow} AND t.id NOT IN (${idList}) GROUP BY TO_CHAR(t.trandate,'YYYY-MM'), tl.subsidiary, NVL(tl.department,0), ${clsExpr}, tal.account, t.type, CASE WHEN t.entity IN (${IC_ENT}) THEN t.entity ELSE 0 END`
     );
     const buB = icJournalIds.length
       ? await sqAll(
           token,
-          `SELECT TO_CHAR(t.trandate,'YYYY-MM') AS ym, tl.subsidiary AS sub, NVL(tl.department,0) AS dept, tal.account AS acct, SUM(NVL(tal.debit,0)) AS d, SUM(NVL(tal.credit,0)) AS c, COUNT(*) AS n ${buPlBase} AND t.id IN (${idList}) GROUP BY TO_CHAR(t.trandate,'YYYY-MM'), tl.subsidiary, NVL(tl.department,0), tal.account`
+          `SELECT TO_CHAR(t.trandate,'YYYY-MM') AS ym, tl.subsidiary AS sub, NVL(tl.department,0) AS dept, ${clsExpr} AS cls, tal.account AS acct, SUM(NVL(tal.debit,0)) AS d, SUM(NVL(tal.credit,0)) AS c, COUNT(*) AS n ${buPlBase} AND t.id IN (${idList}) GROUP BY TO_CHAR(t.trandate,'YYYY-MM'), tl.subsidiary, NVL(tl.department,0), ${clsExpr}, tal.account`
         )
       : [];
     await ingest("fact_bu_pl", [
@@ -216,6 +270,7 @@ export async function GET(req: Request) {
         ym: r.ym,
         subsidiary_id: Number(r.sub),
         department_id: Number(r.dept),
+        class_id: Number(r.cls),
         account_id: Number(r.acct),
         txn_type: r.ttype,
         ic_entity_id: Number(r.ic_entity),
@@ -228,6 +283,7 @@ export async function GET(req: Request) {
         ym: r.ym,
         subsidiary_id: Number(r.sub),
         department_id: Number(r.dept),
+        class_id: Number(r.cls),
         account_id: Number(r.acct),
         txn_type: "Journal",
         ic_entity_id: 0,
@@ -236,27 +292,28 @@ export async function GET(req: Request) {
         credit: Number(r.c),
         lines: Number(r.n),
       })),
-    ]);
+    ], "replace_ym", buYms);
 
     const pWindow = `p.trandate >= TO_DATE('${buFrom}','YYYY-MM-DD') AND p.trandate < TO_DATE('${buTo}','YYYY-MM-DD')`;
     const cashIn = await sqAll(
       token,
-      `SELECT TO_CHAR(p.trandate,'YYYY-MM') AS ym, tl.subsidiary AS sub, NVL(il.department,0) AS dept, CASE WHEN inv.entity IN (${IC_CUST}) THEN inv.entity ELSE 0 END AS ic_entity, SUM(ABS(NVL(il.foreignamount,0)) / ABS(inv.foreigntotal) * NVL(ntll.foreignamount,0) * NVL(p.exchangerate,1)) AS amt, COUNT(DISTINCT p.id) AS pays FROM transaction p JOIN nexttransactionlinelink ntll ON ntll.nextdoc = p.id AND ntll.linktype = 'Payment' JOIN transaction inv ON inv.id = ntll.previousdoc AND inv.type = 'CustInvc' JOIN transactionline tl ON tl.transaction = p.id AND tl.mainline = 'T' JOIN transactionline il ON il.transaction = inv.id AND il.mainline = 'F' AND il.taxline = 'F' AND il.iscogs = 'F' WHERE p.type = 'CustPymt' AND NVL(inv.foreigntotal,0) <> 0 AND ${pWindow} GROUP BY TO_CHAR(p.trandate,'YYYY-MM'), tl.subsidiary, NVL(il.department,0), CASE WHEN inv.entity IN (${IC_CUST}) THEN inv.entity ELSE 0 END`
+      `SELECT TO_CHAR(p.trandate,'YYYY-MM') AS ym, tl.subsidiary AS sub, NVL(il.department,0) AS dept, COALESCE(il.class, im.class, 0) AS cls, CASE WHEN inv.entity IN (${IC_CUST}) THEN inv.entity ELSE 0 END AS ic_entity, SUM(ABS(NVL(il.foreignamount,0)) / ABS(inv.foreigntotal) * NVL(ntll.foreignamount,0) * NVL(p.exchangerate,1)) AS amt, COUNT(DISTINCT p.id) AS pays FROM transaction p JOIN nexttransactionlinelink ntll ON ntll.nextdoc = p.id AND ntll.linktype = 'Payment' JOIN transaction inv ON inv.id = ntll.previousdoc AND inv.type = 'CustInvc' JOIN transactionline tl ON tl.transaction = p.id AND tl.mainline = 'T' JOIN transactionline il ON il.transaction = inv.id AND il.mainline = 'F' AND il.taxline = 'F' AND il.iscogs = 'F' LEFT JOIN transactionline im ON im.transaction = inv.id AND im.mainline = 'T' WHERE p.type = 'CustPymt' AND NVL(inv.foreigntotal,0) <> 0 AND ${pWindow} GROUP BY TO_CHAR(p.trandate,'YYYY-MM'), tl.subsidiary, NVL(il.department,0), COALESCE(il.class, im.class, 0), CASE WHEN inv.entity IN (${IC_CUST}) THEN inv.entity ELSE 0 END`
     );
     const cashOut = await sqAll(
       token,
-      `SELECT TO_CHAR(p.trandate,'YYYY-MM') AS ym, tl.subsidiary AS sub, NVL(bl.department,0) AS dept, CASE WHEN b.entity IN (${IC_VEND}) THEN b.entity ELSE 0 END AS ic_entity, SUM(ABS(NVL(bl.foreignamount,0)) / ABS(b.foreigntotal) * ABS(NVL(ntll.foreignamount,0)) * NVL(p.exchangerate,1)) AS amt, COUNT(DISTINCT p.id) AS pays FROM transaction p JOIN nexttransactionlinelink ntll ON ntll.nextdoc = p.id AND ntll.linktype = 'Payment' JOIN transaction b ON b.id = ntll.previousdoc AND b.type = 'VendBill' JOIN transactionline tl ON tl.transaction = p.id AND tl.mainline = 'T' JOIN transactionline bl ON bl.transaction = b.id AND bl.mainline = 'F' AND bl.taxline = 'F' WHERE p.type = 'VendPymt' AND NVL(b.foreigntotal,0) <> 0 AND ${pWindow} GROUP BY TO_CHAR(p.trandate,'YYYY-MM'), tl.subsidiary, NVL(bl.department,0), CASE WHEN b.entity IN (${IC_VEND}) THEN b.entity ELSE 0 END`
+      `SELECT TO_CHAR(p.trandate,'YYYY-MM') AS ym, tl.subsidiary AS sub, NVL(bl.department,0) AS dept, COALESCE(bl.class, bm.class, 0) AS cls, CASE WHEN b.entity IN (${IC_VEND}) THEN b.entity ELSE 0 END AS ic_entity, SUM(ABS(NVL(bl.foreignamount,0)) / ABS(b.foreigntotal) * ABS(NVL(ntll.foreignamount,0)) * NVL(p.exchangerate,1)) AS amt, COUNT(DISTINCT p.id) AS pays FROM transaction p JOIN nexttransactionlinelink ntll ON ntll.nextdoc = p.id AND ntll.linktype = 'Payment' JOIN transaction b ON b.id = ntll.previousdoc AND b.type = 'VendBill' JOIN transactionline tl ON tl.transaction = p.id AND tl.mainline = 'T' JOIN transactionline bl ON bl.transaction = b.id AND bl.mainline = 'F' AND bl.taxline = 'F' LEFT JOIN transactionline bm ON bm.transaction = b.id AND bm.mainline = 'T' WHERE p.type = 'VendPymt' AND NVL(b.foreigntotal,0) <> 0 AND ${pWindow} GROUP BY TO_CHAR(p.trandate,'YYYY-MM'), tl.subsidiary, NVL(bl.department,0), COALESCE(bl.class, bm.class, 0), CASE WHEN b.entity IN (${IC_VEND}) THEN b.entity ELSE 0 END`
     );
     const cashRow = (direction: "in" | "out") => (r: Record<string, string>) => ({
       ym: r.ym,
       subsidiary_id: Number(r.sub),
       department_id: Number(r.dept),
+      class_id: Number(r.cls),
       direction,
       ic_entity_id: Number(r.ic_entity),
       amount: Math.round(Number(r.amt) * 100) / 100,
       payments: Number(r.pays),
     });
-    await ingest("fact_bu_cash", [...cashIn.map(cashRow("in")), ...cashOut.map(cashRow("out"))]);
+    await ingest("fact_bu_cash", [...cashIn.map(cashRow("in")), ...cashOut.map(cashRow("out"))], "replace_ym", buYms);
 
     const bank = await sqAll(
       token,
@@ -269,9 +326,9 @@ export async function GET(req: Request) {
     );
 
     await ingest("sync_log", [
-      { job: "daily-sync", started_at: started, finished_at: new Date().toISOString(), rows: gl.length + bank.length + buA.length + buB.length, status: "ok" },
+      { job: buOnly ? "bu-backfill" : "daily-sync", started_at: started, finished_at: new Date().toISOString(), rows: gl.length + bank.length + buA.length + buB.length, status: "ok", error: buOnly ? `window ${buYms[0]}..${buYms[buYms.length - 1]}` : null },
     ]);
-    return Response.json({ ok: true, gl: gl.length, bank: bank.length, bu_pl: buA.length + buB.length, bu_cash: cashIn.length + cashOut.length });
+    return Response.json({ ok: true, window: buYms, gl: gl.length, bank: bank.length, classes: classes.length, bu_pl: buA.length + buB.length, bu_cash: cashIn.length + cashOut.length });
   } catch (e) {
     await ingest("sync_log", [
       { job: "daily-sync", started_at: started, finished_at: new Date().toISOString(), rows: 0, status: "error", error: String(e).slice(0, 500) },

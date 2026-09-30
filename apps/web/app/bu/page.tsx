@@ -1,6 +1,6 @@
 "use client";
 
-// BU Cockpit（Blueprint v0.1 §5.1）— 老闆首頁：集團 KPI、4 個 BU 卡片、
+// BU Cockpit（Blueprint v0.1 §5.1）— 老闆首頁：集團 KPI、BU 卡片、
 // 5 間公司今日 bank balance、警示。數字 = 純業務（Layer 1）/ 分攤後（Layer 2）。
 
 import Link from "next/link";
@@ -76,7 +76,7 @@ export default function BuCockpit() {
         <StatTile label="純利 Net（管理帳）" value={hkdCompact(npOf(T))} delta={delta(npOf(T), TL ? npOf(TL) : null)} deltaLabel="vs 去年同期" note={`法定合計對數見 Bridge；分攤 key：${f.allocKey}`} />
       </div>
 
-      <div className="grid md:grid-cols-2 xl:grid-cols-4 gap-3">
+      <div className="grid md:grid-cols-2 xl:grid-cols-5 gap-3">
         {CORE_BUS.map((b) => {
           const c = cur[b];
           const l = ly?.[b];

@@ -42,6 +42,39 @@ GROUP BY …   -- → ic_journal = false
 IC entity 清單 = `ic_entity_map` 全部 entity_id（2026-09-17：45 個）。新增集團 entity 時要同步更新
 `apps/web/app/api/cron/sync/route.ts` 內嘅 `IC_ENT` 常數並補抽受影響月份。
 
+## class 維度（2026-09-29）
+
+Social Strategy（sub 2）嘅 Production department 用 NetSuite **class**「YouTube」標記 YouTube 工作，
+BU 管理帳要分開兩條數。fact_bu_pl / fact_bu_cash 加 `class_id`（入 primary key；0 = 未標），
+取值 `COALESCE(行 class, 主行 class, 0)`；`dim_class` 由 `classification` 表同步；
+`bu_mapping.class_id`（null = 該 department 所有 class）令 `(sub 2, dept 2, class YouTube) → YT`，
+app 內 `buFor()` 優先次序：(dept, class) 精確 > (dept, 任何 class) > 公司預設。
+會計 worksheet 欄 `YT`（GP% / headcount 2021-04 → 2024-03）對應 YT BU。
+
+2026-09-29 全量 backfill（2021-04 → 2026-09，逐 12 個月窗口，每個約 20 秒）結果：
+- `dim_class` 13 個 class；YouTube = id 13「Youtube Channel」（parent 8 Production）。
+- 有 class 嘅 P&L 行主要喺 **sub 1 PBHK / dept 2 Production / class 13**（2021-04 → 2026-05，358 行）；
+  sub 2 SSHK dept 2 冇 YouTube class 行。`bu_mapping` id 26 / 27：(1,2,13) 及 (2,2,13) → YT。
+- 對數：66 個月逐月 lines / debit / credit 對比 backfill 前 snapshot，核心公司（sub 1/2/5/7/8）一致；
+  差異全部來自 sub 6 Go Asia（新 Administrator role 先睇到，落 OTHER BU）同近月 NetSuite 真實改動。
+- 2026-09-30 用戶決定：YouTube **併返入 Production**（唔獨立一欄）。`bu_mapping` 26 / 27 改指向 PROD，
+  worksheet `YT` 欄亦歸 PROD；class 維度同 mapping 規則保留，要再分拆只需改 26 / 27 嘅 `bu_code` 為 YT
+  並將 YT 加回 `BU_LIST` / `CORE_BUS` / `BU_ORDER`。
+- SSHK Commercial Team（dept 13，會計 worksheet `EPR_COMM`「SSHK Comm」欄）由 ePR 拆出為 COMM BU：
+  `bu_mapping` (2,13) 及 (1,13) → COMM；sub 2 數據 2021-04 → 2023-08（1,021 行）。
+- 教訓：Journal 每行 `mainline = 'T'`，header class fallback 唔可以直接 LEFT JOIN mainline 行（會 fan-out），
+  要用 per-transaction derived table 並排除 Journal。
+
+**Backfill / 重抽**（route 支援月份窗口；一律 `replace_ym` 先清該月再寫）：
+
+```
+curl -H "Authorization: Bearer $CRON_SECRET" "https://pbhk-group-dashboard-pbhk.vercel.app/api/cron/sync?from=2026-04&to=2026-09"
+curl -H "Authorization: Bearer $CRON_SECRET" "https://pbhk-group-dashboard-pbhk.vercel.app/api/cron/sync?only=bu"
+select job, started_at, status, error from sync_log where job = 'bu-backfill' order by id desc;
+```
+
+每個 6 個月窗口約 60–120 秒（maxDuration 300）。改 `IC_ENT` / class 規則 / 分拆邏輯後照樣逐窗口重抽。
+
 ## 每日增量
 
 `apps/web/app/api/cron/sync/route.ts` 每次重抽最近 4 個月（含本月）嘅 fact_bu_pl / fact_bu_cash，

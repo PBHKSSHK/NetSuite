@@ -90,6 +90,8 @@ async function sqAll(base: string, token: string, q: string): Promise<Row[]> {
   return out;
 }
 
+// SuiteQL REST 會略去值為 null 嘅欄位（→ undefined）；postgres.js 唔收 undefined。
+const str = (v: unknown): string | null => (v === null || v === undefined ? null : String(v));
 const num = (v: unknown): number | null => (v === null || v === undefined || v === "" ? null : Number(v));
 const win = (from: string, to: string) =>
   `t.trandate >= TO_DATE('${from}','YYYY-MM-DD') AND t.trandate < TO_DATE('${to}','YYYY-MM-DD')`;
@@ -118,13 +120,13 @@ async function archiveGl(base: string, token: string, from: string, to: string) 
     `SELECT COUNT(*) AS n, SUM(NVL(tal.debit,0)) AS d, SUM(NVL(tal.credit,0)) AS c ${GL_FROM} AND ${win(from, to)}`,
   );
   const recs = rows.map((r) => ({
-    txn_id: num(r.txn_id), line_id: num(r.line_id), book: num(r.book) ?? 1, tranid: r.tranid, txn_type: r.type,
-    trandate: r.td, period_id: num(r.pid), subsidiary_id: num(r.sub), account_id: num(r.acct),
+    txn_id: num(r.txn_id), line_id: num(r.line_id), book: num(r.book) ?? 1, tranid: str(r.tranid), txn_type: str(r.type),
+    trandate: str(r.td), period_id: num(r.pid), subsidiary_id: num(r.sub), account_id: num(r.acct),
     department_id: num(r.dept), class_id: num(r.cls), location_id: num(r.loc), line_entity_id: num(r.lent),
-    header_entity_id: num(r.hent), line_memo: r.lmemo ?? null, header_memo: r.hmemo ?? null,
+    header_entity_id: num(r.hent), line_memo: str(r.lmemo), header_memo: str(r.hmemo),
     debit: num(r.debit), credit: num(r.credit), amount: num(r.amount), foreign_amount: num(r.famt),
-    currency_id: num(r.cur), exchange_rate: num(r.fx), status: r.status ?? null, created_date: r.cd ?? null,
-    last_modified: r.lmd ?? null,
+    currency_id: num(r.cur), exchange_rate: num(r.fx), status: str(r.status), created_date: str(r.cd),
+    last_modified: str(r.lmd),
   }));
   await sql.begin(async (tx) => {
     await tx`delete from ns_archive.gl_line where trandate >= ${from} and trandate < ${to}`;

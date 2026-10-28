@@ -52,3 +52,17 @@ curl -X POST https://nlymvuwafgiudbqsyfem.supabase.co/functions/v1/archive-netsu
 select subsidiary_id, extract(year from trandate) yr, sum(debit) d, sum(credit) c
 from ns_archive.gl_line group by 1, 2 order by 1, 2;
 ```
+
+## 首次導出結果（2026-10-27）
+
+- `gl_line` 176,043 行（2011-04-30 → 2027-03-31），33 個窗口全部同 NetSuite 對數一致（行數 + 借貸總數）。
+- 交易表頭 52,229 張；主檔：科目 328、期間 315、公司 8、部門 18、class 13、客戶 665、供應商 1,072、員工 256。
+- 未清：AR 331 張、AP 246 張（2026-10-27 snapshot，10-30 要重跑）。
+- **NetSuite 本身有 18 張客戶發票借貸唔平衡**（2019-12 → 2022-09，主要 SSHK），合共貸方多 HK$1,033,773.70；
+  導出同 NetSuite 一致，唔係導出問題。查法：
+
+```sql
+select txn_id, tranid, subsidiary_id, min(trandate) d, sum(coalesce(debit,0)) - sum(coalesce(credit,0)) diff
+from ns_archive.gl_line group by 1, 2, 3
+having abs(sum(coalesce(debit,0)) - sum(coalesce(credit,0))) > 0.005 order by d;
+```

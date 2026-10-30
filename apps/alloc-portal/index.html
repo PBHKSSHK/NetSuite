@@ -1,0 +1,1013 @@
+<!DOCTYPE html>
+<html lang="zh-Hant-HK">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PBHK 集團費用分攤 Portal・FY2025/26 真數版</title>
+<style>
+:root{
+  color-scheme: light;
+  --surface-1:#fcfcfb; --page:#f9f9f7;
+  --ink-1:#0b0b0b; --ink-2:#52514e; --ink-3:#898781;
+  --grid:#e1e0d9; --axis:#c3c2b7; --border:rgba(11,11,11,0.10);
+  --s1:#2a78d6; --s2:#eb6834; --s3:#1baf7a;
+  --seq-150:#b7d3f6; --seq-250:#86b6ef;
+  --good:#0ca30c; --warn:#fab219; --serious:#ec835a; --critical:#d03b3b;
+  --good-text:#006300;
+  --accent-wash:rgba(42,120,214,0.08);
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    color-scheme: dark;
+    --surface-1:#1a1a19; --page:#0d0d0d;
+    --ink-1:#ffffff; --ink-2:#c3c2b7; --ink-3:#898781;
+    --grid:#2c2c2a; --axis:#383835; --border:rgba(255,255,255,0.10);
+    --s1:#3987e5; --s2:#d95926; --s3:#199e70;
+    --seq-150:#184f95; --seq-250:#1c5cab;
+    --good-text:#0ca30c;
+    --accent-wash:rgba(57,135,229,0.14);
+  }
+}
+*{box-sizing:border-box; margin:0; padding:0;}
+html,body{height:100%;}
+body{
+  font-family: system-ui, -apple-system, "Segoe UI", "PingFang HK", "PingFang TC", "Microsoft JhengHei", sans-serif;
+  background:var(--page); color:var(--ink-1); font-size:14px; line-height:1.55;
+}
+a{color:var(--s1); text-decoration:none;}
+button{font-family:inherit;}
+.app{display:flex; min-height:100vh;}
+.sidebar{
+  width:216px; flex:0 0 216px; background:var(--surface-1);
+  border-right:1px solid var(--border); padding:16px 12px;
+  display:flex; flex-direction:column; gap:2px; position:sticky; top:0; height:100vh;
+}
+.logo{font-weight:700; font-size:15px; padding:6px 10px 2px;}
+.logo small{display:block; font-weight:400; color:var(--ink-3); font-size:11px; margin-top:2px;}
+.demo-chip{
+  margin:10px 10px 14px; display:inline-block; font-size:11px; font-weight:600;
+  color:var(--ink-1); background:var(--accent-wash); border:1px solid var(--border);
+  border-radius:999px; padding:3px 10px; text-align:center;
+}
+.nav-btn{
+  display:flex; align-items:center; gap:9px; width:100%; text-align:left;
+  background:none; border:none; border-radius:8px; padding:8px 10px;
+  font-size:13.5px; color:var(--ink-2); cursor:pointer;
+}
+.nav-btn:hover{background:var(--accent-wash);}
+.nav-btn.active{background:var(--accent-wash); color:var(--ink-1); font-weight:600;}
+.nav-btn .ico{width:18px; text-align:center; opacity:.75;}
+.sidebar .spacer{flex:1;}
+.reset-btn{margin:8px 4px 0; padding:8px 10px; font-size:12px; color:var(--ink-3);
+  background:none; border:1px solid var(--border); border-radius:8px; cursor:pointer;}
+.reset-btn:hover{color:var(--ink-1);}
+.main{flex:1; min-width:0; padding:20px 26px 60px;}
+.topbar{display:flex; align-items:center; gap:14px; margin-bottom:18px; flex-wrap:wrap;}
+.topbar h1{font-size:19px; font-weight:700;}
+.topbar .sub{color:var(--ink-3); font-size:12.5px;}
+.topbar .grow{flex:1;}
+.role-box{display:flex; align-items:center; gap:8px; background:var(--surface-1);
+  border:1px solid var(--border); border-radius:10px; padding:6px 10px;}
+.role-box label{font-size:12px; color:var(--ink-3);}
+.role-box select{
+  border:none; background:none; font-size:13px; font-weight:600; color:var(--ink-1);
+  cursor:pointer; outline:none; font-family:inherit;
+}
+.lock-chip{font-size:12px; font-weight:600; border-radius:999px; padding:4px 11px;
+  border:1px solid var(--border); white-space:nowrap;}
+.lock-chip.open{color:var(--good-text);}
+.lock-chip.locked{color:var(--critical);}
+.grid{display:grid; gap:14px;}
+.card{
+  background:var(--surface-1); border:1px solid var(--border); border-radius:12px;
+  padding:16px 18px;
+}
+.card h3{font-size:13.5px; font-weight:600; margin-bottom:2px;}
+.card .h-sub{font-size:12px; color:var(--ink-3); margin-bottom:12px;}
+.kpi-row{display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:14px; margin-bottom:14px;}
+.kpi .label{font-size:12px; color:var(--ink-2);}
+.kpi .value{font-size:24px; font-weight:600; margin-top:4px;}
+.kpi .delta{font-size:12px; margin-top:3px; color:var(--ink-3);}
+.kpi .delta .up-bad{color:var(--critical); font-weight:600;}
+.kpi .delta .up-good{color:var(--good-text); font-weight:600;}
+.charts-2{grid-template-columns:3fr 2fr;}
+@media (max-width:1100px){ .charts-2{grid-template-columns:1fr;} }
+.stepper{display:flex; gap:0; overflow-x:auto; margin-bottom:14px;}
+.step{flex:1; min-width:96px; position:relative; padding:10px 8px 10px 14px;
+  background:var(--surface-1); border:1px solid var(--border); border-left:none;
+  font-size:11.5px; color:var(--ink-3); white-space:nowrap;}
+.step:first-child{border-left:1px solid var(--border); border-radius:10px 0 0 10px;}
+.step:last-child{border-radius:0 10px 10px 0;}
+.step .n{display:inline-block; width:17px; height:17px; border-radius:50%;
+  border:1px solid var(--axis); text-align:center; line-height:15px; font-size:10px; margin-right:6px;}
+.step.done{color:var(--ink-2);}
+.step.done .n{background:var(--good); border-color:var(--good); color:#fff;}
+.step.now{color:var(--ink-1); font-weight:600; background:var(--accent-wash);}
+.step.now .n{background:var(--s1); border-color:var(--s1); color:#fff;}
+table{width:100%; border-collapse:collapse; font-size:13px;}
+th{font-size:11.5px; color:var(--ink-3); font-weight:600; text-align:left;
+  padding:7px 10px; border-bottom:1px solid var(--grid); white-space:nowrap;}
+td{padding:8px 10px; border-bottom:1px solid var(--grid); vertical-align:top;}
+tr:last-child td{border-bottom:none;}
+td.num, th.num{text-align:right; font-variant-numeric:tabular-nums;}
+tr.subtotal td{font-weight:600; border-top:1px solid var(--axis);}
+tr.hoverable:hover td{background:var(--accent-wash); cursor:pointer;}
+.flag{color:var(--critical); font-weight:600;}
+.muted{color:var(--ink-3);}
+.small{font-size:12px;}
+.st{display:inline-flex; align-items:center; gap:5px; font-size:12px; font-weight:600;
+  border-radius:999px; padding:2px 10px; border:1px solid var(--border); white-space:nowrap;}
+.st .dot{width:8px; height:8px; border-radius:50%;}
+.st-good{color:var(--good-text);} .st-good .dot{background:var(--good);}
+.st-wait{color:var(--ink-2);} .st-wait .dot{background:var(--axis);}
+.st-disp{color:var(--serious);} .st-disp .dot{background:var(--serious);}
+.st-adj{color:var(--s1);} .st-adj .dot{background:var(--s1);}
+.prog{display:flex; height:14px; border-radius:7px; overflow:hidden; background:var(--grid); margin:8px 0 10px;}
+.prog div{height:100%; border-right:2px solid var(--surface-1);}
+.prog div:last-child{border-right:none;}
+.prog-legend{display:flex; gap:16px; flex-wrap:wrap; font-size:12px; color:var(--ink-2);}
+.prog-legend .sw{display:inline-block; width:9px; height:9px; border-radius:2px; margin-right:5px;}
+.btn{
+  display:inline-flex; align-items:center; gap:6px; border-radius:9px; cursor:pointer;
+  border:1px solid var(--border); background:var(--surface-1); color:var(--ink-1);
+  font-size:13px; font-weight:600; padding:8px 14px;
+}
+.btn:hover{background:var(--accent-wash);}
+.btn.primary{background:var(--s1); border-color:var(--s1); color:#fff;}
+.btn.primary:hover{filter:brightness(1.06);}
+.btn.small{font-size:12px; padding:5px 10px; font-weight:500;}
+.btn.danger{color:var(--critical);}
+.btn:disabled{opacity:.45; cursor:not-allowed;}
+.btn-row{display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-top:12px;}
+.chart-wrap{position:relative;}
+svg text{font-family:inherit;}
+.tooltip{
+  position:fixed; z-index:50; pointer-events:none; background:var(--surface-1);
+  border:1px solid var(--border); border-radius:9px; padding:8px 11px; font-size:12px;
+  box-shadow:0 4px 16px rgba(0,0,0,.12); display:none; max-width:280px;
+}
+.tooltip .t-title{font-weight:600; margin-bottom:3px;}
+.tooltip .t-row{display:flex; justify-content:space-between; gap:14px; color:var(--ink-2);}
+.tooltip .t-row b{color:var(--ink-1); font-variant-numeric:tabular-nums;}
+.legend-row{display:flex; gap:16px; flex-wrap:wrap; margin-top:10px; font-size:12px; color:var(--ink-2);}
+.legend-row .sw{display:inline-block; width:9px; height:9px; border-radius:2px; margin-right:5px;}
+.banner{
+  border:1px solid var(--border); border-left:3px solid var(--s2); border-radius:10px;
+  background:var(--surface-1); padding:11px 14px; font-size:12.5px; color:var(--ink-2); margin-bottom:14px;
+}
+.banner b{color:var(--ink-1);}
+.banner.ok{border-left-color:var(--good);}
+.alert-card{border-left:3px solid var(--serious);}
+.two-col{display:grid; grid-template-columns:1fr 1fr; gap:14px;}
+@media (max-width:1100px){ .two-col{grid-template-columns:1fr;} }
+.mt{margin-top:14px;} .mb{margin-bottom:14px;}
+.comment{border:1px solid var(--grid); border-radius:9px; padding:9px 12px; margin-top:8px; font-size:12.5px;}
+.comment .who{font-weight:600; font-size:12px;}
+.comment .when{color:var(--ink-3); font-size:11px; margin-left:6px;}
+textarea{
+  width:100%; min-height:64px; border:1px solid var(--axis); border-radius:9px;
+  background:var(--surface-1); color:var(--ink-1); padding:9px 11px; font-family:inherit; font-size:13px;
+}
+input[type=number]{
+  width:84px; border:1px solid var(--axis); border-radius:7px; background:var(--surface-1);
+  color:var(--ink-1); padding:4px 7px; font-family:inherit; font-size:12.5px; text-align:right;
+}
+input[type=number]:disabled{opacity:.55;}
+.toast-box{position:fixed; bottom:22px; right:22px; z-index:99; display:flex; flex-direction:column; gap:8px;}
+.toast{
+  background:var(--ink-1); color:var(--page); border-radius:10px; padding:10px 16px;
+  font-size:13px; box-shadow:0 6px 20px rgba(0,0,0,.2); animation:fadein .18s ease;
+}
+@keyframes fadein{from{opacity:0; transform:translateY(6px);} to{opacity:1;}}
+.modal-bg{position:fixed; inset:0; background:rgba(0,0,0,.38); z-index:80; display:none;
+  align-items:flex-start; justify-content:center; padding:5vh 16px;}
+.modal{
+  background:var(--surface-1); border:1px solid var(--border); border-radius:14px;
+  max-width:860px; width:100%; max-height:88vh; overflow:auto; padding:20px 22px;
+}
+.modal h3{font-size:15px; margin-bottom:10px;}
+.modal .close-x{float:right; border:none; background:none; font-size:18px; color:var(--ink-3); cursor:pointer;}
+.footer-note{margin-top:26px; font-size:11.5px; color:var(--ink-3); line-height:1.7;}
+.tag{display:inline-block; font-size:10.5px; font-weight:600; border:1px solid var(--border);
+  border-radius:5px; padding:1px 6px; color:var(--ink-3); margin-left:6px; white-space:nowrap;}
+.tag.fee{color:var(--s2);}
+.tag.exp{color:var(--s3);}
+.dn-doc{border:1px solid var(--grid); border-radius:10px; padding:22px 26px; margin-top:10px;}
+.dn-doc h2{font-size:16px; margin-bottom:2px;}
+.dn-doc .small{margin-bottom:14px;}
+.sec-table td{padding:5px 8px; font-size:12.5px;}
+.sec-table th{padding:5px 8px;}
+.recon-ok{color:var(--good-text); font-weight:600;}
+.recon-bad{color:var(--critical); font-weight:600;}
+@media print{
+  .sidebar,.topbar,.btn,.toast-box{display:none !important;}
+  body{background:#fff;}
+}
+</style>
+</head>
+<body>
+<div id="gate" style="position:fixed; inset:0; z-index:200; display:flex; align-items:center; justify-content:center; background:var(--page);">
+  <div class="card" style="width:340px;">
+    <h3 style="font-size:16px">PBHK 分攤 Portal</h3>
+    <div class="h-sub">會計專用・請用集團 Dashboard 同一組賬號登入</div>
+    <div id="gate-err" class="small" style="color:var(--critical); display:none; margin-bottom:8px;"></div>
+    <input id="gate-u" placeholder="用戶名(例:pbadmin)" autocomplete="username"
+      style="width:100%; margin-bottom:8px; border:1px solid var(--axis); border-radius:8px; background:var(--surface-1); color:var(--ink-1); padding:9px 11px; font-family:inherit; font-size:13.5px;">
+    <input id="gate-p" type="password" placeholder="密碼" autocomplete="current-password"
+      style="width:100%; margin-bottom:12px; border:1px solid var(--axis); border-radius:8px; background:var(--surface-1); color:var(--ink-1); padding:9px 11px; font-family:inherit; font-size:13.5px;">
+    <button class="btn primary" id="gate-btn" style="width:100%; justify-content:center;">登入</button>
+    <p class="small muted" style="margin-top:10px;">呢個 portal 畀會計做每月 allocation;老闆睇數用
+      <a href="https://pbhk-group-dashboard-pbhk.vercel.app/bu">集團管理 Dashboard</a>。</p>
+  </div>
+</div>
+<div class="app" style="display:none">
+  <aside class="sidebar">
+    <div class="logo">PBHK 分攤 Portal<small>FY2025/26・真實數據</small></div>
+    <div class="demo-chip" id="src-chip">數據:已上 NetSuite 之 25/26 分攤</div>
+    <div id="nav"></div>
+    <div class="spacer"></div>
+    <a class="reset-btn" style="display:block; text-align:left; text-decoration:none; color:var(--ink-2);"
+      href="https://pbhk-group-dashboard-pbhk.vercel.app/bu" target="_blank" rel="noopener">↗ 集團管理 Dashboard<br><span class="muted small">老闆 view・BU 還原</span></a>
+    <button class="reset-btn" onclick="location.reload()">⟲ 重設</button>
+    <button class="reset-btn" onclick="window.__signOut && window.__signOut()">⇥ 登出</button>
+  </aside>
+  <main class="main">
+    <div class="topbar">
+      <div>
+        <h1 id="page-title">總覽</h1>
+        <div class="sub" id="page-sub"></div>
+      </div>
+      <div class="grow"></div>
+      <div class="role-box"><label>結算期間:</label>
+        <select id="month-sel" onchange="switchMonth(this.value)"></select></div>
+      <span class="lock-chip open" id="lock-chip"></span>
+      <div class="role-box">
+        <label>身份:</label>
+        <select id="role-sel" onchange="switchRole(this.value)"></select>
+      </div>
+    </div>
+    <div id="content"></div>
+    <div class="footer-note">
+      真數版說明:所有金額、GP%、人頭數均來自「2025-26 PB cost allocation breakdown.xlsx」(已上 NetSuite)同「2 allocation.xlsx」;引擎逐科目重算並同 Excel 已過賬數核對(全年 12 個月最大差異 &lt; HK$2,純四捨五入)。確認/異議/Journal 流程喺 2026年3月 做示範(實際該月已過賬)。正式版:Supabase + RLS、NetSuite 自動同步、email 通知、API 過賬。
+    </div>
+  </main>
+</div>
+<div class="toast-box" id="toast-box"></div>
+<div class="tooltip" id="tooltip"></div>
+<div class="modal-bg" id="modal-bg" onclick="if(event.target===this) closeModal()"><div class="modal" id="modal-body"></div></div>
+<script src="alloc-data.js"></script>
+<script>
+"use strict";
+
+/* ============ 基礎結構 ============ */
+const MONTHS = ["Apr25","May25","Jun25","Jul25","Aug25","Sep25","Oct25","Nov25","Dec25","Jan26","Feb26","Mar26"];
+const MLAB = {};
+MONTHS.forEach(m=>{ const y = m.endsWith("25")?"2025":"2026";
+  const mm = {Apr:"4月",May:"5月",Jun:"6月",Jul:"7月",Aug:"8月",Sep:"9月",Oct:"10月",Nov:"11月",Dec:"12月",Jan:"1月",Feb:"2月",Mar:"3月"}[m.slice(0,3)];
+  MLAB[m] = y+"年"+mm; });
+const ACTIVE = "Mar26";   /* 未鎖示範月(實際已過賬) */
+
+const SECTIONS = [
+  {id:"Admin",       lab:"Admin 部門費用",   cat:"exp", sk:"adm_exp"},
+  {id:"Admin - Mgt", lab:"Admin 部門管理費", cat:"fee", sk:"adm_fee"},
+  {id:"IT",          lab:"IT 部門費用",      cat:"exp", sk:"it_exp"},
+  {id:"Mgt",         lab:"Mgt 部門費用",     cat:"exp", sk:"mgt_exp"},
+  {id:"Mgt - Mgt",   lab:"Mgt 部門管理費",   cat:"fee", sk:"mgt_fee"}
+];
+const CORE = ["PBHK","P704","SSHK","CLS","JM"];          /* GP% 分攤 */
+const RELS = ["JS","GA"];                                 /* 人頭分攤 */
+const EXT  = ["P704","SSHK","CLS","JM","JS","GA"];        /* 集團外(要出結單) */
+const ENT = {
+  PBHK:{name:"Photoblog.hk Limited", short:"PBHK(自留)", type:"母公司", acct:null},
+  P704:{name:"704 Production Limited", short:"704 Production", type:"子公司", acct:"25000025"},
+  SSHK:{name:"Social Strategy Hong Kong Limited", short:"Social Strategy HK", type:"子公司", acct:"25000015"},
+  CLS:{name:"CLS GARAGE", short:"CLS Garage", type:"子公司", acct:"25000022"},
+  JM:{name:"Jervois M Limited", short:"Jervois M", type:"子公司", acct:"25000024"},
+  JS:{name:"Jervois Solution Limited", short:"Jervois Solution", type:"關聯公司", acct:"25000030"},
+  GA:{name:"Go Asia Plus Travel Limited", short:"Go Asia Travel", type:"關聯公司", acct:"25000031"}
+};
+
+/* 工作副本:金額(a)、關聯公司參與額(r)、GP%、人頭 — 只有未鎖月份可改 */
+const WORK = {};
+MONTHS.forEach(m=>{
+  const src = REAL.months[m];
+  const w = {hcJS:src.hcJS, hcGA:src.hcGA, hcTot:src.hcTot, gp:Object.assign({},REAL.gp), secs:{}};
+  SECTIONS.forEach(s=>{
+    w.secs[s.id] = (src.secs[s.id]||[]).map(L=>({c:L.c, n:L.n, a:L.a, r:L.r}));
+    w.secs[s.id].push({c:"PROV", n:"人手撥備(provision)", a:0, r:0, p:1});
+  });
+  WORK[m] = w;
+});
+
+/* ============ 可變狀態 ============ */
+let state = {
+  m:ACTIVE, role:"FIN", page:"overview",
+  posted:{}, stage:4, statementsIssued:false,
+  conf:{}, disputes:[], adjs:[], journal:null,
+  audit:[
+    {t:"2026-09-01 10:00", who:"系統", act:"載入 2025-26 PB cost allocation breakdown.xlsx(已上 NetSuite 版本)"},
+    {t:"2026-09-01 10:00", who:"系統", act:"載入 2 allocation.xlsx(歷年 headcount / GP% 基準)"},
+    {t:"2026-09-01 10:01", who:"系統", act:"逐科目重算 12 個月並同已過賬數核對:全部一致(差異 < HK$2)"}
+  ]
+};
+MONTHS.forEach(m=>state.posted[m] = (m!==ACTIVE));
+
+/* ============ 分攤引擎(真實兩層方法) ============ */
+/* 每條科目:關聯公司先按 當月人頭/總人頭 拎「參與額 r」嘅份;餘額按 GP% 分五間 core */
+function calc(m){
+  const w = WORK[m];
+  const sec = SECTIONS.map(()=>({JS:0,GA:0,PBHK:0,P704:0,SSHK:0,CLS:0,JM:0,amt:0}));
+  SECTIONS.forEach((s,si)=>{
+    (w.secs[s.id]||[]).forEach(L=>{
+      const amt = L.a; if(!amt && !L.r) return;
+      const js = w.hcTot ? L.r * w.hcJS / w.hcTot : 0;
+      const ga = w.hcTot ? L.r * w.hcGA / w.hcTot : 0;
+      const rem = amt - js - ga;
+      sec[si].JS += js; sec[si].GA += ga; sec[si].amt += amt;
+      CORE.forEach(k=>{ sec[si][k] += rem * w.gp[k] / 100; });
+    });
+  });
+  /* 異議調整(只限示範月) */
+  if(m===ACTIVE) state.adjs.forEach(a=>{ sec[a.si][a.co] += a.delta; sec[a.si].amt += a.delta; });
+  const co = {};
+  ["PBHK","P704","SSHK","CLS","JM","JS","GA"].forEach(k=>{
+    let exp=0, fee=0;
+    SECTIONS.forEach((s,si)=>{ const v = sec[si][k]||0; if(s.cat==="exp") exp+=v; else fee+=v; });
+    co[k] = {exp, fee, total:exp+fee};
+  });
+  const grand = Object.values(co).reduce((s,x)=>s+x.total,0);
+  const extTotal = EXT.reduce((s,k)=>s+co[k].total,0);
+  return {sec, co, grand, extTotal, jsTot:co.JS.total, gaTot:co.GA.total};
+}
+/* 同 Excel 已過賬 summary 對數 */
+function recon(m){
+  const a = calc(m), sh = REAL.months[m].summ.grand;
+  const map = {PBHK:a.co.PBHK.total,P704:a.co.P704.total,SSHK:a.co.SSHK.total,CLS:a.co.CLS.total,JM:a.co.JM.total,js:a.co.JS.total,ga:a.co.GA.total,amt:a.grand};
+  let mx=0; Object.keys(map).forEach(k=>{ mx = Math.max(mx, Math.abs(map[k]-sh[k])); });
+  return mx;
+}
+const RECON0 = (()=>{ let mx=0; MONTHS.forEach(m=>mx=Math.max(mx,recon(m))); return mx; })();
+function fyCum(co, upTo){
+  let s=0; for(const m of MONTHS){ s+=calc(m).co[co].total; if(m===upTo) break; } return s;
+}
+
+/* ============ 小工具 ============ */
+const $ = id=>document.getElementById(id);
+function fmt(n){ return "HK$" + Math.round(n).toLocaleString("en-US"); }
+function fmtN(n){ const v=Math.round(n); return (v<0?"("+Math.abs(v).toLocaleString("en-US")+")":v.toLocaleString("en-US")); }
+function fmt2(n){ return n.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2}); }
+function pct(a,b){ if(!b) return "—"; const p=(a-b)/Math.abs(b)*100; return (p>=0?"+":"") + p.toFixed(1) + "%"; }
+function esc(s){ return String(s).replace(/[&<>"]/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c])); }
+function nowStr(){ const d=new Date(); const p=x=>String(x).padStart(2,"0");
+  return d.getFullYear()+"-"+p(d.getMonth()+1)+"-"+p(d.getDate())+" "+p(d.getHours())+":"+p(d.getMinutes()); }
+function toast(msg){ const b=document.createElement("div"); b.className="toast"; b.textContent=msg;
+  $("toast-box").appendChild(b); setTimeout(()=>b.remove(), 3800); }
+function logAudit(who, act){ state.audit.unshift({t:nowStr(), who, act}); }
+function openModal(html){ $("modal-body").innerHTML = html; $("modal-bg").style.display="flex"; }
+function closeModal(){ $("modal-bg").style.display="none"; }
+function showTip(ev, html){
+  const t=$("tooltip"); t.innerHTML=html; t.style.display="block";
+  let x=ev.clientX+14, y=ev.clientY+12; const r=t.getBoundingClientRect();
+  if(x+r.width>window.innerWidth-8) x=ev.clientX-r.width-10;
+  if(y+r.height>window.innerHeight-8) y=ev.clientY-r.height-10;
+  t.style.left=x+"px"; t.style.top=y+"px";
+}
+function hideTip(){ $("tooltip").style.display="none"; }
+function wireTips(root){
+  root.querySelectorAll("[data-tip]").forEach(el=>{
+    el.addEventListener("mousemove", ev=>showTip(ev, decodeURIComponent(el.dataset.tip)));
+    el.addEventListener("mouseleave", hideTip);
+  });
+}
+function tip(html){ return encodeURIComponent(html); }
+function locked(){ return state.posted[state.m]; }
+
+/* ============ 角色/導覽 ============ */
+const ROLES = {
+  FIN:{label:"集團 Finance", pages:[
+    ["overview","◫","總覽"],["rules","⚖","分攤規則"],["calc","∑","每月計算"],
+    ["stmts","⇄","結單對數"],["journal","✎","Journal/過賬"],["audit","≡","稽核紀錄"]]},
+  JS:{label:"Jervois Solution(關聯公司)", pages:[["mystmt","⇄","我的結單"]]},
+  SSHK:{label:"Social Strategy HK(子公司)", pages:[["mystmt","⇄","我的結單"]]}
+};
+const PAGE_TITLES = {
+  overview:["總覽","FY2025/26 全年真數・按月睇"],
+  rules:["分攤規則","兩層方法:關聯公司人頭 → 餘額 GP%;比例每年4月更新"],
+  calc:["每月計算","逐科目:NetSuite 數 → 關聯公司參與額 → GP% 分攤"],
+  stmts:["結單對數","各公司確認進度、異議處理"],
+  journal:["Journal/過賬","半自動:草稿 → approve → 過賬 NetSuite"],
+  audit:["稽核紀錄","所有動作自動留痕"],
+  mystmt:["我的結單","逐項確認或提出異議"]
+};
+function switchRole(r){ state.role=r; state.page=ROLES[r].pages[0][0]; render(); }
+function switchMonth(m){ state.m=m; ensureConf(); render(); }
+function go(p){ state.page=p; render(); }
+
+/* 確認狀態(只對示範月有效;已過賬月一律視為完成) */
+function ensureConf(){
+  if(state.m!==ACTIVE) return;
+  const a = calc(ACTIVE);
+  EXT.forEach(co=>{
+    if(!state.conf[co]) state.conf[co] = {};
+    SECTIONS.forEach((s,si)=>{
+      const has = Math.abs(a.sec[si][co])>0.005;
+      if(has && state.conf[co][si]===undefined) state.conf[co][si]="pending";
+      if(!has) delete state.conf[co][si];
+    });
+    if(!Object.keys(state.conf[co]).length) delete state.conf[co];
+  });
+}
+function confSummary(){
+  const per={}; let confirmed=0,pending=0,disputed=0,total=0;
+  if(state.m!==ACTIVE){ EXT.forEach(co=>{per[co]="posted";}); return {per,confirmed:EXT.length,pending:0,disputed:0,total:EXT.length}; }
+  Object.keys(state.conf).forEach(co=>{
+    const sts=Object.values(state.conf[co]); let st="confirmed";
+    if(sts.some(s=>s==="disputed")) st="disputed";
+    else if(sts.some(s=>s==="pending")) st="pending";
+    per[co]=st; total++;
+    if(st==="confirmed")confirmed++; else if(st==="disputed")disputed++; else pending++;
+  });
+  return {per,confirmed,pending,disputed,total};
+}
+function statusChip(st){
+  if(st==="posted")    return `<span class="st st-good"><span class="dot"></span>已過賬</span>`;
+  if(st==="confirmed") return `<span class="st st-good"><span class="dot"></span>已確認</span>`;
+  if(st==="adjusted")  return `<span class="st st-adj"><span class="dot"></span>已調整並確認</span>`;
+  if(st==="disputed")  return `<span class="st st-disp"><span class="dot"></span>有異議</span>`;
+  return `<span class="st st-wait"><span class="dot"></span>待確認</span>`;
+}
+
+/* ============ 參數修改(只限未鎖月) ============ */
+function updGp(k,v){ WORK[state.m].gp[k]=parseFloat(v)||0; logAudit(ROLES[state.role].label,"修改 GP% 參數 "+k+" → "+v); render(); }
+function updHc(k,v){ WORK[state.m][k]=parseFloat(v)||0; logAudit(ROLES[state.role].label,"修改人頭參數 "+k+" → "+v); render(); }
+function updRel(si,li,v){
+  const L=WORK[state.m].secs[SECTIONS[si].id][li]; L.r=parseFloat(v)||0;
+  logAudit(ROLES[state.role].label,"修改「"+L.n+"」關聯公司參與額 → "+fmt(L.r)); render();
+}
+function updProvA(si,li,v){
+  const L=WORK[state.m].secs[SECTIONS[si].id][li]; L.a=parseFloat(v)||0; if(L.r>L.a&&L.a>=0) L.r=L.a;
+  logAudit(ROLES[state.role].label,"人手入撥備:"+SECTIONS[si].lab+" "+fmt(L.a)); render();
+}
+
+/* ============ 圖表 ============ */
+const SEC_COLORS = ["var(--s1)","var(--s2)","var(--s3)","var(--seq-250)","var(--warn)"];
+function trendLine(){
+  const vals = MONTHS.map(m=> (m===ACTIVE && !state.posted[m]) ? calc(m).grand : REAL.months[m].summ.grand.amt);
+  const W=860,H=200,padL=56,padR=40,padT=14,padB=30;
+  const lo=Math.min(...vals)*0.92, hi=Math.max(...vals)*1.05;
+  const xs=i=>padL+i*(W-padL-padR)/(MONTHS.length-1);
+  const ys=v=>padT+(1-(v-lo)/(hi-lo))*(H-padT-padB);
+  let s=`<svg viewBox="0 0 ${W} ${H}" width="100%" style="display:block">`;
+  const step=Math.round((hi-lo)/3/10000)*10000||10000;
+  for(let g=Math.ceil(lo/step)*step; g<hi; g+=step){
+    s+=`<line x1="${padL}" y1="${ys(g)}" x2="${W-padR}" y2="${ys(g)}" stroke="var(--grid)"/>`;
+    s+=`<text x="${padL-8}" y="${ys(g)+4}" text-anchor="end" font-size="11" fill="var(--ink-3)" font-variant-numeric="tabular-nums">${Math.round(g/1000)}K</text>`;
+  }
+  const pts=vals.map((v,i)=>[xs(i),ys(v)]);
+  const line=pts.map((p,i)=>(i?"L":"M")+p[0].toFixed(1)+","+p[1].toFixed(1)).join(" ");
+  s+=`<path d="${line} L${pts[pts.length-1][0]},${H-padB} L${pts[0][0]},${H-padB} Z" fill="var(--s1)" opacity="0.1"/>`;
+  s+=`<path d="${line}" fill="none" stroke="var(--s1)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`;
+  MONTHS.forEach((m,i)=>{
+    s+=`<text x="${xs(i)}" y="${H-10}" text-anchor="middle" font-size="10.5" fill="var(--ink-3)">${m.slice(0,3)}</text>`;
+    const cw=(W-padL-padR)/(MONTHS.length-1);
+    s+=`<rect x="${xs(i)-cw/2}" y="0" width="${cw}" height="${H}" fill="transparent"
+      data-tip="${tip(`<div class='t-title'>${MLAB[m]}</div><div class='t-row'><span>分攤總額</span><b>${fmt(vals[i])}</b></div>${i?`<div class='t-row'><span>按月</span><b>${pct(vals[i],vals[i-1])}</b></div>`:""}`)}"/>`;
+    if(m===state.m) s+=`<circle cx="${xs(i)}" cy="${ys(vals[i])}" r="5" fill="var(--s1)" stroke="var(--surface-1)" stroke-width="2"/>`;
+  });
+  return s+"</svg>";
+}
+function barChartCos(){
+  const a=calc(state.m); const pm=MONTHS[MONTHS.indexOf(state.m)-1];
+  const rows=EXT.map(k=>({k, v:a.co[k].total, last: pm? (state.posted[pm]?REAL.months[pm].summ.grand[{P704:"P704",SSHK:"SSHK",CLS:"CLS",JM:"JM"}[k]]??(k==="JS"?REAL.months[pm].summ.grand.js:REAL.months[pm].summ.grand.ga):calc(pm).co[k].total):null}))
+    .sort((x,y)=>y.v-x.v);
+  const W=560,rowH=30,padL=140,padR=90,H=rows.length*rowH+12;
+  const max=Math.max(...rows.map(r=>Math.abs(r.v)),1);
+  const sx=v=>Math.abs(v)/max*(W-padL-padR);
+  let s=`<svg viewBox="0 0 ${W} ${H}" width="100%" style="display:block">`;
+  s+=`<line x1="${padL}" y1="4" x2="${padL}" y2="${H-6}" stroke="var(--axis)"/>`;
+  rows.forEach((r,i)=>{
+    const y=i*rowH+8,bh=18,w=Math.max(sx(r.v),4);
+    s+=`<text x="${padL-8}" y="${y+bh/2+4}" text-anchor="end" font-size="12" fill="var(--ink-2)">${esc(ENT[r.k].short)}</text>`;
+    s+=`<path d="M${padL},${y} h${w-4} a4,4 0 0 1 4,4 v${bh-8} a4,4 0 0 1 -4,4 h-${w-4} z" fill="${ENT[r.k].type==="關聯公司"?"var(--s2)":"var(--s1)"}"/>`;
+    s+=`<text x="${padL+w+7}" y="${y+bh/2+4}" font-size="11.5" fill="var(--ink-2)" font-variant-numeric="tabular-nums">${fmtN(r.v)}</text>`;
+    s+=`<rect x="0" y="${i*rowH+2}" width="${W}" height="${rowH}" fill="transparent" data-tip="${tip(
+      `<div class='t-title'>${esc(ENT[r.k].name)}</div>
+       <div class='t-row'><span>本月分攤</span><b>${fmt(r.v)}</b></div>
+       ${r.last!=null?`<div class='t-row'><span>上月</span><b>${fmt(r.last)}</b></div><div class='t-row'><span>差異</span><b>${pct(r.v,r.last)}</b></div>`:""}`)}"/>`;
+  });
+  return s+`</svg><div class="legend-row"><span><span class="sw" style="background:var(--s1)"></span>子公司(GP%)</span><span><span class="sw" style="background:var(--s2)"></span>關聯公司(人頭)</span></div>`;
+}
+function stackedSecs(){
+  const a=calc(state.m);
+  const segs=SECTIONS.map((s,si)=>({name:s.lab,v:a.sec[si].amt,color:SEC_COLORS[si],cat:s.cat}));
+  const total=segs.reduce((s,x)=>s+x.v,0)||1;
+  let bars=`<div style="display:flex; height:34px; border-radius:8px; overflow:hidden; gap:2px; background:var(--surface-1)">`;
+  segs.forEach(g=>{
+    const p=Math.max(g.v/total*100,0);
+    bars+=`<div data-tip="${tip(`<div class='t-title'>${esc(g.name)}</div><div class='t-row'><span>本月</span><b>${fmt(g.v)}</b></div><div class='t-row'><span>佔比</span><b>${p.toFixed(1)}%</b></div>`)}"
+      style="width:${p}%; background:${g.color}; display:flex; align-items:center; justify-content:center;">${p>8?`<span style="color:#fff; font-size:11px; font-weight:600;">${p.toFixed(0)}%</span>`:""}</div>`;
+  });
+  bars+=`</div><div class="legend-row">`+segs.map(g=>
+    `<span><span class="sw" style="background:${g.color}"></span>${esc(g.name)}&nbsp;<b style="color:var(--ink-1)">${fmtN(g.v)}</b></span>`).join("")+`</div>`;
+  return bars;
+}
+
+/* ============ 頁面:總覽 ============ */
+function pageOverview(){
+  const a=calc(state.m); const pm=MONTHS[MONTHS.indexOf(state.m)-1];
+  const prev=pm?REAL.months[pm].summ.grand.amt:null;
+  const fee=SECTIONS.reduce((s,x,si)=>s+(x.cat==="fee"?a.sec[si].amt:0),0);
+  const expp=a.grand-fee;
+  return `
+  <div class="banner ok"><b>對數狀態:</b>引擎逐科目重算全年 12 個月,同已上 NetSuite 嘅 Excel 數<b>全部一致</b>(最大差異 HK$${RECON0.toFixed(2)},純四捨五入)。</div>
+  <div class="kpi-row">
+    <div class="card kpi"><div class="label">${MLAB[state.m]}分攤總額</div><div class="value">${fmtN(a.grand)}</div>
+      <div class="delta">${prev?`較上月 <span class="${a.grand>=prev?"up-bad":"up-good"}">${pct(a.grand,prev)}</span>`:"—"}</div></div>
+    <div class="card kpi"><div class="label">管理費 / 費用報銷</div><div class="value">${fmtN(fee)}</div>
+      <div class="delta">費用報銷 ${fmtN(expp)}</div></div>
+    <div class="card kpi"><div class="label">分出集團外(應收)</div><div class="value">${fmtN(a.extTotal)}</div>
+      <div class="delta">母公司自留 ${fmtN(a.co.PBHK.total)}(GP ${WORK[state.m].gp.PBHK}%)</div></div>
+    <div class="card kpi"><div class="label">關聯公司(人頭制)</div><div class="value">${fmtN(a.co.JS.total+a.co.GA.total)}</div>
+      <div class="delta">JS ${fmtN(a.co.JS.total)}・Go Asia ${fmtN(a.co.GA.total)}</div></div>
+    <div class="card kpi"><div class="label">當月人頭(JS/GA/全群)</div><div class="value">${WORK[state.m].hcJS}/${WORK[state.m].hcGA}/${WORK[state.m].hcTot}</div>
+      <div class="delta">GP%:704 ${WORK[state.m].gp.P704}・SSHK ${WORK[state.m].gp.SSHK}・CLS ${WORK[state.m].gp.CLS}・JM ${WORK[state.m].gp.JM}</div></div>
+  </div>
+  <div class="grid charts-2 mb">
+    <div class="card"><h3>各公司${MLAB[state.m]}分攤</h3><div class="h-sub">唔包母公司自留 ${fmtN(a.co.PBHK.total)}</div>
+      <div class="chart-wrap">${barChartCos()}</div></div>
+    <div class="card"><h3>費用組成(5 個分攤類別)</h3><div class="h-sub">合共 ${fmt(a.grand)}</div>
+      ${stackedSecs()}</div>
+  </div>
+  <div class="card"><h3>FY2025/26 分攤總額趨勢</h3><div class="h-sub">2025年4月–2026年3月(真數;7月起 Directors Remuneration 160K→120K 令管理費下調)</div>
+    <div class="chart-wrap">${trendLine()}</div></div>`;
+}
+
+/* ============ 頁面:分攤規則 ============ */
+function pageRules(){
+  const w=WORK[state.m]; const dis=locked()?"disabled":"";
+  const ruleRows = [
+    ["Admin 部門費用","exp","JS+GA 按人頭(全部科目)","餘額按 GP% 分 5 間 core"],
+    ["Admin 部門管理費","fee","JS+GA 按人頭(薪金或有 core-only 部份)","餘額按 GP%;含租金/大廈管理費/場租收入沖減"],
+    ["IT 部門費用","exp","JS+GA <b>只承擔部份科目</b>(R&M 由 2025-11 起只計 5,000/7,500)","Computer/Consumables/Website 只限 core"],
+    ["Mgt 部門費用","exp","關聯公司<b>不參與</b>","全數按 GP% 分 5 間 core"],
+    ["Mgt 部門管理費","fee","關聯公司<b>不參與</b>","Directors Rem./MPF/利息(不含SSHK)全按 GP%"]
+  ].map((r,i)=>`<tr><td><b>${r[0]}</b> <span class="tag ${r[1]}">${r[1]==="fee"?"管理費":"費用報銷"}</span></td>
+    <td>${r[2]}</td><td class="muted small">${r[3]}</td></tr>`).join("");
+  const gpRows = CORE.map(k=>`<tr><td>${esc(ENT[k].short)} <span class="tag">${ENT[k].type}</span></td>
+    <td class="num"><input type="number" step="0.01" value="${w.gp[k]}" ${dis} onchange="updGp('${k}',this.value)"></td></tr>`).join("");
+  const gpSum = CORE.reduce((s,k)=>s+w.gp[k],0);
+  const fys = Object.keys(REAL.gpHistory);
+  const histRows = CORE.map(k=>`<tr><td>${esc(ENT[k].short)}</td>`+fys.map(fy=>`<td class="num">${REAL.gpHistory[fy][k]||"—"}</td>`).join("")+`</tr>`).join("");
+  return `
+  <div class="card mb"><h3>分攤規則(2025/26 實際做法,已核對)</h3>
+    <div class="h-sub">兩層方法:①關聯公司(Jervois Solution、Go Asia)按 <b>當月人頭 ÷ 全集團人頭</b> 承擔「參與額」;②餘額按 <b>年度 GP%</b> 分畀 PBHK(自留)+ 四間子公司</div>
+    <table><thead><tr><th>分攤類別</th><th>關聯公司(人頭制)</th><th>Core 公司(GP%)</th></tr></thead>
+    <tbody>${ruleRows}</tbody></table></div>
+  <div class="two-col">
+    <div class="card"><h3>GP% 基準(FY2025/26,全年固定)</h3>
+      <div class="h-sub">按對上年度 gross profit 訂;${locked()?"已過賬月份不能修改":"改完即時重算(what-if)"}</div>
+      <table><thead><tr><th>公司</th><th class="num">GP %</th></tr></thead><tbody>${gpRows}
+      <tr class="subtotal"><td>合計</td><td class="num ${Math.abs(gpSum-100)>0.01?"flag":""}">${gpSum.toFixed(2)}%${Math.abs(gpSum-100)>0.01?" ⚠ 唔係100%":""}</td></tr></tbody></table>
+      <p class="small muted" style="margin-top:9px">⚠ FY2026/27 比例未定(GP% sheet 2026-04 起空白)— 4月結賬前要入新比例。</p></div>
+    <div class="card"><h3>人頭參數(${MLAB[state.m]})</h3>
+      <div class="h-sub">關聯公司份額 = 科目參與額 × 人頭 ÷ 全集團人頭(JS 由 2025年6月底起人頭 ×0.8 計)</div>
+      <table><tbody>
+        <tr><td>Jervois Solution 人頭</td><td class="num"><input type="number" step="0.1" value="${w.hcJS}" ${dis} onchange="updHc('hcJS',this.value)"></td></tr>
+        <tr><td>Go Asia 人頭</td><td class="num"><input type="number" step="0.1" value="${w.hcGA}" ${dis} onchange="updHc('hcGA',this.value)"></td></tr>
+        <tr><td>全集團總人頭</td><td class="num"><input type="number" step="0.1" value="${w.hcTot}" ${dis} onchange="updHc('hcTot',this.value)"></td></tr>
+      </tbody></table>
+      <p class="small muted" style="margin-top:9px">科目層面:每條科目有「關聯公司參與額」,0 = 唔參與(例:IT Computer)、全額 = 全參與、部份 = 例如 IT R&M 7,500 只有 5,000 計人頭份。去「每月計算」逐條睇/改。</p></div>
+  </div>
+  <div class="card mt"><h3>GP% 歷史(嚟自 2 allocation.xlsx)</h3>
+    <div class="h-sub">每年 4 月按上年 gross profit 重訂;2021–2023 PBHK 拆 Production/Youtube 兩隊,呢度已合併</div>
+    <table><thead><tr><th>公司</th>${fys.map(f=>`<th class="num">${f}</th>`).join("")}</tr></thead>
+    <tbody>${histRows}</tbody></table></div>`;
+}
+
+/* ============ 頁面:每月計算 ============ */
+function pageCalc(){
+  const a=calc(state.m); const w=WORK[state.m]; const dis=locked()?"disabled":"";
+  const mx=recon(state.m);
+  const banner = state.posted[state.m]
+    ? `<div class="banner ok"><b>✓ 與已過賬數一致</b> — 引擎重算 vs Excel/NetSuite 已上數,最大差異 HK$${mx.toFixed(2)}(四捨五入)。</div>`
+    : (mx<=2 ? `<div class="banner ok"><b>示範月(2026年3月)</b> — 依家嘅參數同已過賬版本一致(差異 HK$${mx.toFixed(2)});你可以改參與額/撥備/GP% 睇 what-if,再行確認→Journal 流程。</div>`
+             : `<div class="banner"><b>⚠ 已偏離已過賬版本</b> — 而家嘅計算同 Excel 已上數差 HK$${mx.toFixed(2)}(你改咗參數/撥備)。㩒「重設」可以還原。</div>`);
+  const secCards = SECTIONS.map((s,si)=>{
+    const lines = w.secs[s.id].map((L,li)=>{
+      if(L.p && locked()) return "";
+      const js = w.hcTot? L.r*w.hcJS/w.hcTot : 0;
+      const ga = w.hcTot? L.r*w.hcGA/w.hcTot : 0;
+      const rem = L.a-js-ga;
+      if(!L.p && Math.abs(L.a)<0.005 && Math.abs(L.r)<0.005) return "";
+      const relCell = L.p
+        ? `<input type="number" step="100" value="${L.r}" ${dis} onchange="updRel(${si},${li},this.value)" title="撥備入面關聯公司參與幾多">`
+        : (RELS.length && s.id.indexOf("Mgt")!==0 && s.id!=="Mgt - Mgt"
+            ? `<input type="number" step="100" value="${L.r}" ${dis} onchange="updRel(${si},${li},this.value)">`
+            : `<span class="muted">不適用</span>`);
+      const amtCell = L.p
+        ? `<input type="number" step="100" value="${L.a}" ${dis} onchange="updProvA(${si},${li},this.value)">`
+        : fmtN(L.a);
+      return `<tr${L.p?' style="background:var(--accent-wash)"':''}>
+        <td>${L.p?"":`<span class="muted small">${esc(L.c)}</span> `}${esc(L.n)}${!L.p&&Math.abs(L.r-L.a)>0.5&&Math.abs(L.r)>0.005?`<span class="tag">部份參與 ${fmtN(L.r)}</span>`:""}${!L.p&&Math.abs(L.r)<0.005&&s.id!=="Mgt"&&s.id!=="Mgt - Mgt"?`<span class="tag">只限 core</span>`:""}</td>
+        <td class="num">${amtCell}</td><td class="num">${relCell}</td>
+        <td class="num">${fmtN(js)}</td><td class="num">${fmtN(ga)}</td>
+        ${CORE.map(k=>`<td class="num">${fmtN(rem*w.gp[k]/100)}</td>`).join("")}</tr>`;
+    }).join("");
+    const t=a.sec[si];
+    const sh = REAL.months[state.m].summ[s.sk];
+    const d = Math.abs(t.amt-sh.amt);
+    return `<div class="card mb"><h3>${s.lab} <span class="tag ${s.cat}">${s.cat==="fee"?"管理費":"費用報銷"}</span>
+      <span class="small ${d<=2?"recon-ok":"recon-bad"}" style="float:right">${d<=2?"✓ 對上 Excel":"⚠ 差 "+fmt2(d)}</span></h3>
+      <div class="h-sub">${s.id==="Mgt"||s.id==="Mgt - Mgt"?"關聯公司不參與,全按 GP% 分 core":"關聯公司按 人頭("+w.hcJS+"+"+w.hcGA+")/"+w.hcTot+" 承擔「參與額」,餘額按 GP%"} ・ 金額顯示至整數(計算保留仙)</div>
+      <table class="sec-table"><thead><tr><th>科目</th><th class="num">NetSuite 數</th><th class="num">關聯公司參與額</th>
+        <th class="num">JS</th><th class="num">Go Asia</th><th class="num">PBHK自留</th><th class="num">704</th><th class="num">SSHK</th><th class="num">CLS</th><th class="num">JM</th></tr></thead>
+      <tbody>${lines}
+      <tr class="subtotal"><td>小計</td><td class="num">${fmtN(t.amt)}</td><td class="num"></td>
+        <td class="num">${fmtN(t.JS)}</td><td class="num">${fmtN(t.GA)}</td>
+        ${CORE.map(k=>`<td class="num">${fmtN(t[k])}</td>`).join("")}</tr></tbody></table>
+      ${s.id==="Admin - Mgt" ? manualAdjBox() : ""}</div>`;
+  }).join("");
+  const g=a; const c=confSummary();
+  return `${stepperHtml()}${banner}${secCards}
+  <div class="card"><h3>${MLAB[state.m]}分攤合計</h3>
+    <table><thead><tr><th></th><th class="num">JS</th><th class="num">Go Asia</th><th class="num">PBHK自留</th><th class="num">704</th><th class="num">SSHK</th><th class="num">CLS</th><th class="num">JM</th><th class="num">總計</th></tr></thead>
+    <tbody><tr class="subtotal"><td>本月合計</td>
+      <td class="num">${fmtN(g.co.JS.total)}</td><td class="num">${fmtN(g.co.GA.total)}</td>
+      ${CORE.map(k=>`<td class="num">${fmtN(g.co[k].total)}</td>`).join("")}
+      <td class="num"><b>${fmtN(g.grand)}</b></td></tr></tbody></table>
+    <div class="btn-row">
+      ${!locked()?`<button class="btn primary" onclick="issueStmts()">${state.statementsIssued?"重發結單":"發出結單畀 6 間公司"}</button>`:""}
+      <span class="muted small">母公司自留部份唔使出結單;㩒公司名(結單對數頁)可 drill 每條科目份額</span>
+    </div></div>`;
+}
+function manualAdjBox(){
+  const adj = REAL.months[state.m].adj||{};
+  const keys = Object.keys(adj).filter(k=>k!=="per ledger");
+  if(!keys.length && adj["per ledger"]===undefined) return "";
+  return `<div class="small muted" style="margin-top:10px; border-top:1px dashed var(--axis); padding-top:8px">
+    <b>人手對數項(Excel 原有):</b> ${keys.map(k=>esc(k)+" "+fmtN(adj[k])).join("・")||"—"}
+    ${adj["per ledger"]!==undefined?`・<b>per ledger ${fmtN(adj["per ledger"])}</b>(= Admin 費用 + Admin 管理費 ± 對數項)`:""}</div>`;
+}
+function issueStmts(){
+  state.statementsIssued=true; state.stage=Math.max(state.stage,5);
+  logAudit(ROLES.FIN.label,"向 6 間公司發出 "+MLAB[state.m]+" 結單");
+  toast("已發出結單(正式版出 email 通知)"); render();
+}
+
+/* ============ Stepper ============ */
+const STEPS=["同步費用池","行計算","覆核","發結單","公司確認","Journal 草稿","Approve 過賬","鎖月"];
+function stepperHtml(){
+  if(state.posted[state.m]) return `<div class="banner ok" style="margin-bottom:14px"><b>${MLAB[state.m]}已完成全部流程</b> — 已過賬 NetSuite 並鎖月(真實記錄)。呢度顯示嘅係當時數字。</div>`;
+  return `<div class="stepper">`+STEPS.map((t,i)=>{
+    const n=i+1, cls=n<state.stage?"done":(n===state.stage?"now":"");
+    return `<div class="step ${cls}"><span class="n">${n<state.stage?"✓":n}</span>${t}</div>`;
+  }).join("")+`</div>`;
+}
+
+/* ============ 結單/確認 ============ */
+function coSecShares(co, m){
+  const a=calc(m);
+  return SECTIONS.map((s,si)=>({si, s, amt:a.sec[si][co]||0})).filter(x=>Math.abs(x.amt)>0.005);
+}
+function lineShares(co, m){
+  const w=WORK[m]; const out=[];
+  SECTIONS.forEach((s,si)=>{
+    w.secs[s.id].forEach(L=>{
+      if(Math.abs(L.a)<0.005 && Math.abs(L.r)<0.005) return;
+      const js=w.hcTot?L.r*w.hcJS/w.hcTot:0, ga=w.hcTot?L.r*w.hcGA/w.hcTot:0, rem=L.a-js-ga;
+      let share=0;
+      if(co==="JS") share=js; else if(co==="GA") share=ga; else share=rem*w.gp[co]/100;
+      if(Math.abs(share)>0.005) out.push({sec:s.lab, si, code:L.c, name:L.n, amt:L.a, rel:L.r, share});
+    });
+  });
+  return out;
+}
+function stmtLinesTable(co, editable){
+  const shares=coSecShares(co, state.m);
+  const rows=shares.map(x=>{
+    const st = state.m===ACTIVE ? (state.conf[co]&&state.conf[co][x.si])||"pending" : "posted";
+    const disp = state.disputes.find(d=>d.co===co&&d.si===x.si&&d.status==="open");
+    const adj = state.m===ACTIVE ? state.adjs.filter(z=>z.co===co&&z.si===x.si).reduce((s,z)=>s+z.delta,0) : 0;
+    let actions="";
+    if(editable && state.m===ACTIVE && !locked()){
+      if(st==="pending") actions=`<button class="btn small" onclick="confirmLine('${co}',${x.si})">✓ 確認</button>
+        <button class="btn small danger" onclick="disputeForm('${co}',${x.si})">提出異議</button>`;
+      else if(st==="disputed") actions=`<span class="muted small">等 Finance 回覆</span>`;
+    }
+    return `<tr><td>${esc(x.s.lab)} <span class="tag ${x.s.cat}">${x.s.cat==="fee"?"管理費":"費用報銷"}</span>
+      ${adj?`<div class="small muted">含調整 ${fmtN(adj)}(${esc(state.adjs.find(z=>z.co===co&&z.si===x.si).reason)})</div>`:""}</td>
+      <td class="num">${fmtN(x.amt)}</td><td>${statusChip(st)}</td><td>${actions}</td></tr>`+
+      (disp?`<tr><td colspan="4" style="padding-top:0">${disputeThread(disp,false)}</td></tr>`:"");
+  }).join("");
+  return `<table><thead><tr><th>分攤類別</th><th class="num">本月分攤(HK$)</th><th>狀態</th><th></th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+function progStrip(){
+  const c=confSummary();
+  const segs=[
+    {n:c.confirmed,color:"var(--good)",label:state.m===ACTIVE?"✓ 已確認":"✓ 已過賬"},
+    {n:c.pending,color:"var(--axis)",label:"○ 待確認"},
+    {n:c.disputed,color:"var(--serious)",label:"! 異議"}
+  ].filter(s=>s.n>0);
+  return `<div class="prog">${segs.map(s=>`<div style="width:${s.n/c.total*100}%; background:${s.color}"></div>`).join("")}</div>
+    <div class="prog-legend">${segs.map(s=>`<span><span class="sw" style="background:${s.color}"></span>${s.label} ${s.n} 間</span>`).join("")}
+    <span class="muted">(共 ${c.total} 間;母公司自留毋須確認)</span></div>`;
+}
+function pageStmts(){
+  const a=calc(state.m); const c=confSummary();
+  let tE=0,tF=0,tT=0,tC=0;
+  const rows=EXT.map(co=>{
+    const x=a.co[co]; const cum=fyCum(co,state.m);
+    tE+=x.exp; tF+=x.fee; tT+=x.total; tC+=cum;
+    return `<tr>
+      <td>${esc(ENT[co].name)} <span class="tag">${ENT[co].type}</span></td>
+      <td>${statusChip(c.per[co]||"pending")}</td>
+      <td class="num">${fmtN(x.exp)}</td><td class="num">${fmtN(x.fee)}</td>
+      <td class="num"><b>${fmtN(x.total)}</b></td>
+      <td class="num">${fmtN(cum)}</td>
+      <td class="num muted" title="正式版由 vendor bill 帶入,計出期末淨額(應收/應付)">—</td>
+      <td><button class="btn small" onclick="viewStmt('${co}')">睇結單</button>
+          <button class="btn small" onclick="debitNote('${co}')">Debit note</button></td></tr>`;
+  }).join("");
+  const disps=state.disputes.map(d=>`<div class="card mb">${disputeThread(d,true)}</div>`).join("");
+  return `${stepperHtml()}
+  ${state.m===ACTIVE?`<div class="card mb"><h3>各公司確認進度</h3>${progStrip()}
+    <div class="btn-row"><button class="btn small" onclick="remindAll()">✉ 一鍵追未確認公司</button></div></div>`:""}
+  <div class="card mb"><h3>${MLAB[state.m]} 結單一覽</h3>
+    <div class="h-sub">費用報銷 + 管理費 = 本月合計(應收);「對方開票(應付)」正式版由 NetSuite vendor bill 帶入計淨額;FY累計 = 2025年4月起</div>
+    <table><thead><tr><th>公司</th><th>狀態</th><th class="num">費用報銷</th><th class="num">管理費</th><th class="num">本月合計</th><th class="num">FY累計</th><th class="num">對方開票(應付)</th><th></th></tr></thead>
+    <tbody>${rows}
+    <tr class="subtotal"><td>合計(集團外)</td><td></td><td class="num">${fmtN(tE)}</td><td class="num">${fmtN(tF)}</td>
+      <td class="num">${fmtN(tT)}</td><td class="num">${fmtN(tC)}</td><td></td><td></td></tr></tbody></table></div>
+  ${state.m===ACTIVE?`<h3 style="margin:6px 0 10px">異議處理</h3>${disps||'<div class="muted small">冇異議</div>'}`:""}`;
+}
+function remindAll(){
+  const c=confSummary();
+  const names=Object.keys(c.per).filter(k=>c.per[k]==="pending").map(k=>ENT[k].short).join("、");
+  logAudit(ROLES.FIN.label,"向未確認公司發出提醒 email");
+  toast("已向 "+(names||"(冇)")+" 發出提醒(正式版出真 email)");
+}
+function viewStmt(co){
+  const a=calc(state.m); const x=a.co[co];
+  const lines=lineShares(co,state.m);
+  const rows=lines.map(l=>`<tr><td class="muted small">${esc(l.sec)}</td><td><span class="muted small">${esc(l.code)}</span> ${esc(l.name)}
+      ${Math.abs(l.rel-l.amt)>0.5&&(co==="JS"||co==="GA")?`<span class="tag">參與額 ${fmtN(l.rel)}</span>`:""}</td>
+    <td class="num">${fmtN(l.amt)}</td><td class="num">${fmtN(l.share)}</td></tr>`).join("");
+  openModal(`<button class="close-x" onclick="closeModal()">✕</button>
+    <h3>${esc(ENT[co].name)}・${MLAB[state.m]} 結單明細</h3>
+    <p class="small muted mb">${co==="JS"||co==="GA"
+      ?`人頭制:份額 = 科目參與額 × ${co==="JS"?WORK[state.m].hcJS:WORK[state.m].hcGA} ÷ ${WORK[state.m].hcTot};唔參與 Mgt 部門及 IT 部份科目`
+      :`GP% 制:份額 =(科目金額 − 關聯公司份)× ${WORK[state.m].gp[co]}%`}
+      ・本月合計 <b>${fmt(x.total)}</b>(費用報銷 ${fmtN(x.exp)} + 管理費 ${fmtN(x.fee)})</p>
+    <table class="sec-table"><thead><tr><th>類別</th><th>科目</th><th class="num">科目全額</th><th class="num">你的份額</th></tr></thead>
+    <tbody>${rows}<tr class="subtotal"><td colspan="3">合計</td><td class="num">${fmtN(x.total)}</td></tr></tbody></table>
+    <p class="small muted mt">對應科目:${ENT[co].acct?ENT[co].acct+" Amount Due From "+esc(ENT[co].name):"—"}</p>`);
+}
+function debitNote(co){
+  const shares=coSecShares(co,state.m); const x=calc(state.m).co[co];
+  const rows=shares.map(s=>`<tr><td>集團${esc(s.s.lab)}分攤(${MLAB[state.m]})</td><td class="num">${fmtN(s.amt)}</td></tr>`).join("");
+  openModal(`<button class="close-x" onclick="closeModal()">✕</button>
+    <h3>Debit Note 預覽</h3>
+    <div class="dn-doc">
+      <h2>Photoblog.hk Limited</h2>
+      <div class="small muted">Debit Note・DN-${state.m}-${co}・${MLAB[state.m]}月結</div>
+      <p class="mb"><b>致:</b>${esc(ENT[co].name)}</p>
+      <table><thead><tr><th>項目</th><th class="num">金額(HK$)</th></tr></thead>
+      <tbody>${rows}<tr class="subtotal"><td>總計</td><td class="num">${fmtN(x.total)}</td></tr></tbody></table>
+      <p class="small muted mt">按集團費用分攤政策(FY2025/26:關聯公司按人頭、其餘按 GP%)每月結算;明細可喺 portal 查閱。</p>
+    </div>
+    <div class="btn-row"><button class="btn" onclick="window.print()">🖨 列印/存 PDF</button>
+    <span class="muted small">正式版:自動生成 PDF + email</span></div>`);
+}
+
+/* ============ 我的結單(公司視角) ============ */
+function pageMyStmt(){
+  const co=state.role; const e=ENT[co]; const a=calc(state.m); const x=a.co[co];
+  const cum=fyCum(co,state.m);
+  const hist=MONTHS.map(m=>{
+    const v=calc(m).co[co].total;
+    return `<tr><td>${MLAB[m]}</td><td class="num">${fmtN(v)}</td><td>${state.posted[m]?"已確認・已過賬":"待確認(本月)"}</td></tr>`;
+  }).join("");
+  const exemptNote = (co==="JS")
+    ? `<p class="small muted" style="margin-top:9px">ℹ 你公司(關聯公司)按人頭承擔 Admin/IT 部份費用,<b>唔參與 Mgt 部門費用同管理費</b>;IT 之中 Computer/Website 等科目亦唔使承擔,R&M 只計 5,000/7,500 參與額。</p>`
+    : "";
+  return `
+  <div class="banner"><b>權限模擬:</b>你而家以 ${esc(e.name)} 身份登入,只見到自己公司嘅結單(正式版用 Supabase RLS 鎖死)。</div>
+  <div class="kpi-row">
+    <div class="card kpi"><div class="label">${MLAB[state.m]}分攤</div><div class="value">${fmtN(x.total)}</div>
+      <div class="delta">費用報銷 ${fmtN(x.exp)}・管理費 ${fmtN(x.fee)}</div></div>
+    <div class="card kpi"><div class="label">FY2025/26 累計</div><div class="value">${fmtN(cum)}</div>
+      <div class="delta">2025年4月起</div></div>
+    <div class="card kpi"><div class="label">計法</div><div class="value" style="font-size:16px">${e.type==="關聯公司"?"人頭比例":"GP% "+WORK[state.m].gp[co]+"%"}</div>
+      <div class="delta">${e.type==="關聯公司"?`人頭 ${co==="JS"?WORK[state.m].hcJS:WORK[state.m].hcGA} / 全群 ${WORK[state.m].hcTot}`:"按上年 gross profit 訂"}</div></div>
+  </div>
+  <div class="card mb"><h3>${MLAB[state.m]}分攤・逐項確認</h3>
+    <div class="h-sub">${state.m===ACTIVE?"同意就㩒「確認」;有問題可以「提出異議」,Finance 會喺 portal 回覆":"已過賬月份,只供查閱"}</div>
+    ${stmtLinesTable(co,true)}
+    ${exemptNote}
+    <div class="btn-row">
+      ${state.m===ACTIVE && state.conf[co] && Object.values(state.conf[co]).some(s=>s==="pending")?
+        `<button class="btn primary" onclick="confirmAll('${co}')">✓ 一鍵確認所有待確認項目</button>`:""}
+      <button class="btn" onclick="viewStmt('${co}')">睇逐科目明細</button>
+      <button class="btn" onclick="debitNote('${co}')">下載 debit note</button>
+    </div></div>
+  <div class="card"><h3>FY2025/26 逐月(真數)</h3>
+    <table><thead><tr><th>月份</th><th class="num">分攤金額(HK$)</th><th>狀態</th></tr></thead>
+    <tbody>${hist}</tbody></table></div>`;
+}
+function confirmLine(co,si){
+  state.conf[co][si]="confirmed";
+  logAudit(esc(ENT[co].name),"確認 "+SECTIONS[si].lab+" 分攤 "+fmt(calc(ACTIVE).sec[si][co]));
+  toast("已確認 "+SECTIONS[si].lab); maybeAdvance(); render();
+}
+function confirmAll(co){
+  Object.keys(state.conf[co]).forEach(si=>{ if(state.conf[co][si]==="pending") state.conf[co][si]="confirmed"; });
+  logAudit(esc(ENT[co].name),"一鍵確認所有待確認項目");
+  toast("已確認所有待確認項目"); maybeAdvance(); render();
+}
+function disputeForm(co,si){
+  openModal(`<button class="close-x" onclick="closeModal()">✕</button>
+    <h3>對 ${SECTIONS[si].lab} 分攤提出異議</h3>
+    <p class="small muted mb">留言直接顯示畀集團 Finance,全程留痕</p>
+    <textarea id="disp-text" placeholder="請講明異議原因…"></textarea>
+    <div class="btn-row"><button class="btn primary" onclick="submitDispute('${co}',${si})">送出異議</button></div>`);
+}
+function submitDispute(co,si){
+  const txt=($("disp-text").value||"").trim()||"對此項分攤有疑問,請覆核。";
+  const id="D-"+String(state.disputes.length+1).padStart(3,"0");
+  state.disputes.push({id,co,si,status:"open",thread:[{who:esc(ENT[co].name),when:nowStr(),text:txt}]});
+  state.conf[co][si]="disputed"; state.stage=Math.max(state.stage,5);
+  logAudit(esc(ENT[co].name),"對 "+SECTIONS[si].lab+" 提出異議("+id+")");
+  closeModal(); toast("異議已送出,Finance 會收到通知"); render();
+}
+function disputeThread(d,finActions){
+  const msgs=d.thread.map(m=>`<div class="comment"><span class="who">${esc(m.who)}</span><span class="when">${m.when}</span><div>${esc(m.text)}</div></div>`).join("");
+  let foot="";
+  if(finActions && d.status==="open" && !locked()){
+    foot=`<textarea id="rep-${d.id}" placeholder="回覆(可留空)"></textarea>
+      <div class="btn-row">
+        <span class="small muted">調整金額(負數 = 減收):</span>
+        <input type="number" id="adj-${d.id}" step="10" value="0">
+        <button class="btn primary small" onclick="acceptDispute('${d.id}')">接納並調整</button>
+        <button class="btn small" onclick="maintainDispute('${d.id}')">回覆並維持原判</button>
+      </div>`;
+  }
+  if(d.status!=="open") foot=`<div class="small muted mt">狀態:${d.status==="resolved-adjusted"?"已接納並調整":"已回覆,維持原判(等對方重新確認)"}</div>`;
+  return `<div style="border-left:3px solid var(--serious); padding-left:12px; margin:4px 0 8px">
+    <div class="small" style="font-weight:600; color:var(--serious)">異議 ${d.id}・${esc(ENT[d.co].name)}・${SECTIONS[d.si].lab}</div>${msgs}${foot}</div>`;
+}
+function acceptDispute(id){
+  const d=state.disputes.find(x=>x.id===id);
+  const delta=parseFloat(($("adj-"+id)&&$("adj-"+id).value)||"0")||0;
+  const rep=($("rep-"+id)&&$("rep-"+id).value.trim())||("已覆核,接納並調整 "+fmt(delta)+"。");
+  d.thread.push({who:"集團 Finance",when:nowStr(),text:rep});
+  d.status="resolved-adjusted";
+  if(delta) state.adjs.push({co:d.co,si:d.si,delta,reason:"異議 "+id+" 調整"});
+  state.conf[d.co][d.si]="adjusted";
+  logAudit(ROLES.FIN.label,"接納異議 "+id+",調整 "+ENT[d.co].short+" "+SECTIONS[d.si].lab+" "+fmt(delta));
+  toast("已調整並重發結單"); maybeAdvance(); render();
+}
+function maintainDispute(id){
+  const d=state.disputes.find(x=>x.id===id);
+  const rep=($("rep-"+id)&&$("rep-"+id).value.trim())||"經覆核維持原分攤,請重新確認。";
+  d.thread.push({who:"集團 Finance",when:nowStr(),text:rep});
+  d.status="closed-maintained"; state.conf[d.co][d.si]="pending";
+  logAudit(ROLES.FIN.label,"回覆異議 "+id+":維持原判");
+  toast("已回覆並維持原判"); render();
+}
+function maybeAdvance(){
+  const c=confSummary();
+  if(state.m===ACTIVE && c.confirmed===c.total && !state.journal) state.stage=6;
+}
+
+/* ============ Journal/過賬 ============ */
+function pageJournal(){
+  const a=calc(state.m);
+  if(state.posted[state.m] && state.m!==ACTIVE){
+    const rows=EXT.map(co=>`<tr><td class="muted">${ENT[co].acct}</td><td>Amount Due From ${esc(ENT[co].name)}</td>
+      <td class="num">${fmtN(a.co[co].total)}</td><td class="num"></td></tr>`).join("");
+    const fee=EXT.reduce((s,co)=>s+a.co[co].fee,0), exp=EXT.reduce((s,co)=>s+a.co[co].exp,0);
+    return `${stepperHtml()}<div class="card">
+      <h3>${MLAB[state.m]} Intercompany Journal(已過賬・重現)</h3>
+      <div class="h-sub">主體:Photoblog.hk Limited・已上 NetSuite;金額由引擎重現,同已過賬數一致(差異 < HK$2)</div>
+      <table><thead><tr><th>科目</th><th>名稱</th><th class="num">借(HK$)</th><th class="num">貸(HK$)</th></tr></thead>
+      <tbody>${rows}
+      <tr><td class="muted">60000022</td><td>Service Fee Income : Management Fee Income(管理費部份)</td><td class="num"></td><td class="num">${fmtN(fee)}</td></tr>
+      <tr><td class="muted">81xxxxxx</td><td>各費用科目沖減(費用報銷部份)</td><td class="num"></td><td class="num">${fmtN(exp)}</td></tr>
+      <tr class="subtotal"><td></td><td>合計</td><td class="num">${fmtN(fee+exp)}</td><td class="num">${fmtN(fee+exp)}</td></tr></tbody></table></div>`;
+  }
+  const c=confSummary(); const allOk=c.confirmed===c.total;
+  let body;
+  if(!state.journal){
+    body=`<div class="card mb"><h3>產生 intercompany journal 草稿</h3>
+      <div class="h-sub">半自動:6 間公司確認晒 → 草稿 → approve → 過賬 NetSuite;母公司自留部份唔入 JE</div>
+      ${progStrip()}
+      <div class="btn-row">
+        <button class="btn primary" ${allOk?"":"disabled"} onclick="genJournal()">產生 journal 草稿</button>
+        ${allOk?"":`<button class="btn small" onclick="demoConfirmAll()">示範快捷:當全部已確認</button>`}
+      </div></div>`;
+  } else {
+    const j=state.journal;
+    const rows=j.lines.map(l=>`<tr><td class="muted">${l.acct}</td><td>${esc(l.name)}</td>
+      <td class="num">${l.dr?fmtN(l.dr):""}</td><td class="num">${l.cr?fmtN(l.cr):""}</td></tr>`).join("");
+    const dr=j.lines.reduce((s,l)=>s+(l.dr||0),0), cr=j.lines.reduce((s,l)=>s+(l.cr||0),0);
+    body=`<div class="card mb">
+      <h3>Journal 草稿 ${j.no} ${j.posted?'<span class="st st-good"><span class="dot"></span>已過賬</span>':'<span class="st st-wait"><span class="dot"></span>待 approve</span>'}</h3>
+      <div class="h-sub">主體:Photoblog.hk Limited・Memo:${MLAB[state.m]} 集團行政費用分攤(對方開票 AP 行 vendor bill,唔入呢張 JE)</div>
+      <table><thead><tr><th>科目</th><th>名稱</th><th class="num">借(HK$)</th><th class="num">貸(HK$)</th></tr></thead>
+      <tbody>${rows}<tr class="subtotal"><td></td><td>合計</td><td class="num">${fmtN(dr)}</td><td class="num">${fmtN(cr)}</td></tr></tbody></table>
+      ${j.posted?`<p class="small mt" style="color:var(--good-text)"><b>✓ 已過賬</b> NetSuite ${j.nsRef}・${j.postedAt}・${MLAB[state.m]}已鎖</p>`
+      :`<div class="btn-row">
+          <button class="btn primary" onclick="approveJournal()">✓ Approve 並過賬 NetSuite</button>
+          <button class="btn" onclick="state.journal=null; render()">棄置草稿</button>
+          <span class="muted small">正式版經 NetSuite API 過賬;示範只模擬</span></div>`}
+      </div>`;
+  }
+  return stepperHtml()+body;
+}
+function demoConfirmAll(){
+  Object.keys(state.conf).forEach(co=>Object.keys(state.conf[co]).forEach(si=>{
+    if(state.conf[co][si]==="pending"||state.conf[co][si]==="disputed") state.conf[co][si]="confirmed";
+  }));
+  state.disputes.forEach(d=>{ if(d.status==="open") d.status="closed-maintained"; });
+  logAudit("系統(示範)","快捷:模擬全部公司完成確認");
+  maybeAdvance(); toast("已當全部公司確認晒"); render();
+}
+function genJournal(){
+  const a=calc(ACTIVE); const lines=[];
+  EXT.forEach(co=>{
+    if(Math.abs(a.co[co].total)<0.005) return;
+    lines.push({acct:ENT[co].acct, name:"Amount Due From "+ENT[co].name, dr:Math.round(a.co[co].total)});
+  });
+  const drSum=lines.reduce((s,l)=>s+l.dr,0);
+  const fee=Math.round(EXT.reduce((s,co)=>s+a.co[co].fee,0));
+  lines.push({acct:"60000022", name:"Service Fee Income : Management Fee Income(管理費部份)", cr:fee});
+  lines.push({acct:"81xxxxxx", name:"各費用科目沖減(費用報銷部份)", cr:drSum-fee});
+  state.journal={no:"JE-IC-"+state.m+"-001", lines, posted:false};
+  state.stage=7;
+  logAudit(ROLES.FIN.label,"產生 journal 草稿 "+state.journal.no);
+  toast("已產生 journal 草稿,等 approve"); render();
+}
+function approveJournal(){
+  state.journal.posted=true; state.journal.nsRef="JE(示範)"; state.journal.postedAt=nowStr();
+  state.posted[ACTIVE]=true; state.stage=8;
+  logAudit(ROLES.FIN.label,"Approve 並過賬 "+state.journal.no+";"+MLAB[ACTIVE]+"鎖月");
+  toast("已過賬並鎖月(示範模擬)"); render();
+}
+
+/* ============ 稽核 ============ */
+function pageAudit(){
+  const rows=state.audit.map(x=>`<tr><td class="muted small" style="white-space:nowrap">${x.t}</td><td>${x.who}</td><td>${x.act}</td></tr>`).join("");
+  return `<div class="card"><h3>稽核紀錄</h3><div class="h-sub">正式版每個動作(確認、異議、調整、改參數、approve、過賬)自動寫入,不可刪改</div>
+    <table><thead><tr><th>時間</th><th>用戶</th><th>動作</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+}
+
+/* ============ Router ============ */
+function render(){
+  const role=ROLES[state.role];
+  $("role-sel").innerHTML=Object.keys(ROLES).map(k=>
+    `<option value="${k}" ${k===state.role?"selected":""}>${ROLES[k].label}</option>`).join("");
+  $("month-sel").innerHTML=MONTHS.map(m=>
+    `<option value="${m}" ${m===state.m?"selected":""}>${MLAB[m]}${state.posted[m]&&m!==ACTIVE?"":m===ACTIVE?"(示範)":""}</option>`).join("");
+  $("nav").innerHTML=role.pages.map(p=>
+    `<button class="nav-btn ${state.page===p[0]?"active":""}" onclick="go('${p[0]}')"><span class="ico">${p[1]}</span>${p[2]}</button>`).join("");
+  const [t,sub]=PAGE_TITLES[state.page]||["",""];
+  $("page-title").textContent=t; $("page-sub").textContent=sub;
+  $("lock-chip").className="lock-chip "+(state.posted[state.m]?"locked":"open");
+  $("lock-chip").textContent=state.posted[state.m]?"🔒 已過賬・已鎖":"● 未鎖(流程示範)";
+  const pages={overview:pageOverview,rules:pageRules,calc:pageCalc,stmts:pageStmts,
+    journal:pageJournal,audit:pageAudit,mystmt:pageMyStmt};
+  $("content").innerHTML=(pages[state.page]||pageOverview)();
+  wireTips($("content"));
+}
+ensureConf();
+render();
+
+</script>
+<script type="module">
+import { createClient } from "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm";
+const sb = createClient("https://nlymvuwafgiudbqsyfem.supabase.co",
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5seW12dXdhZmdpdWRicXN5ZmVtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODYxNDQ1ODgsImV4cCI6MjEwMTcyMDU4OH0._OiCurl8MSzMRGc3FSs9UlhcrNBzQH0ZKkHejePhrwE");
+const gate = document.getElementById("gate"), app = document.querySelector(".app");
+const errBox = document.getElementById("gate-err");
+function unlock(){ gate.style.display = "none"; app.style.display = "flex"; }
+window.__signOut = async () => { try{ await sb.auth.signOut(); }catch(e){} location.reload(); };
+try {
+  const { data } = await sb.auth.getSession();
+  if (data && data.session) unlock();
+} catch(e) {}
+async function doLogin(){
+  const u = (document.getElementById("gate-u").value || "").trim().toLowerCase();
+  const p = document.getElementById("gate-p").value || "";
+  if(!u || !p){ errBox.textContent = "請入齊用戶名同密碼"; errBox.style.display = "block"; return; }
+  const email = u.includes("@") ? u : u + "@pbhk.info";
+  const btn = document.getElementById("gate-btn"); btn.disabled = true; btn.textContent = "登入中…";
+  const { error } = await sb.auth.signInWithPassword({ email, password: p });
+  btn.disabled = false; btn.textContent = "登入";
+  if (error) { errBox.textContent = "登入失敗:賬號或密碼唔啱"; errBox.style.display = "block"; return; }
+  unlock();
+}
+document.getElementById("gate-btn").addEventListener("click", doLogin);
+document.getElementById("gate-p").addEventListener("keydown", e => { if(e.key === "Enter") doLogin(); });
+</script>
+</body>
+</html>

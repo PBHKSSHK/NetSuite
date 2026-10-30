@@ -66,3 +66,13 @@ select txn_id, tranid, subsidiary_id, min(trandate) d, sum(coalesce(debit,0)) - 
 from ns_archive.gl_line group by 1, 2, 3
 having abs(sum(coalesce(debit,0)) - sum(coalesce(credit,0))) > 0.005 order by d;
 ```
+
+## 最後導出結果（2026-10-30 17:30 HKT）
+
+- 重跑 `gl` 2025-01 → 2028-01（5 個窗口）全部同 NetSuite 對數一致；`txn` 2026–2027、`master`、`open`（AR 332、AP 246）完成。
+- 合計：`gl_line` 176,049 行，交易表頭 52,230 張；33 個 GL 窗口全部 `ok`。
+- 最後一次 Supabase 同步（`sync-netsuite`）2026-10-30 09:36 UTC 成功（GL 5,800 行）。
+- 已停：pg_cron `daily-netsuite-sync`（保留 `weekly-cfo-memo`）。Vercel Cron 由 PR #6 刪除。
+- **留意：NetSuite 入面 2026-09 / 10 數量好少**（每月 GL 行數：5 月 1,264、6 月 1,449、7 月 1,119、8 月 1,227、
+  **9 月 369、10 月 103**），即係 9、10 月大部分交易冇喺 NetSuite 入帳，應該已經直接入咗 Xero 或者未入。
+  呢兩個月嘅數要由 Xero 補，唔好當 NetSuite 數完整。
